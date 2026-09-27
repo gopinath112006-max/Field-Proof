@@ -1,0 +1,76 @@
+FIELDCHECK 3D GLASS DASHBOARD - FEATURE MANIFEST
+================================================
+
+VISUAL THEME
+- Dark navy / black professional field-operations theme
+- Electric blue and cyan accent system
+- Glassmorphism cards with 20-30px backdrop blur
+- Soft white typography and high-contrast status indicators
+- No rainbow fluorescent theme; status colours are reserved for meaning
+
+3D / INTERACTION
+- Physical 3D button depth
+- Hover lift + scale
+- Press-down click effect
+- Bevel/highlight and layered shadows
+- Mouse-following card tilt, approximately +/-5 degrees
+- Master toggle: 3D + GLASS + UV + TILT ON
+- Preference is saved in localStorage
+
+UV / FLUORESCENT
+- Cool-spectrum UV/fluorescent visual accent
+- Visual inspection aid only; it does not identify substances or replace laboratory confirmation
+
+EMERGENCY SIREN
+- SIREN OFF by default
+- Click SIREN ON for a pulsing visual emergency beacon
+- Optional Web Audio siren starts only after user interaction
+- Click again to silence
+
+LOGO
+- fieldcheck-logo.svg
+- Used on login/front theme and browser favicon
+- Used in sidebar branding
+
+EXISTING FUNCTIONALITY RETAINED
+- Firebase authentication/configuration
+- Camera capture and image import
+- GPS capture
+- Local/offline records
+- Firebase Storage / Firestore integration
+- REST API integration
+- Real PDF report export
+- History, reports, locations, sync and field guide pages
+- Responsive desktop/tablet/mobile layout
+
+RUN
+1. npm install
+2. npm run dev
+
+
+FIELDCheck COMMAND DASHBOARD UPDATE
+- Premium dark navy/electric blue glass dashboard
+- 3D tactile buttons and interactive hover/press depth
+- ±5 degree mouse-following tilt on dashboard cards
+- Cyan scanning line camera preview
+- Result distribution donut and trend analytics
+- Quick action controls wired to existing workflows
+- Recent test records wired to existing history/view functions
+- Test type controls wired to New Field Test
+- GPS, Sync Center and Field Guide dashboard widgets
+- Existing logo, authentication, camera, reports, Firebase and backend preserved
+
+SETTINGS & BUTTON INTERACTIONS (2026-09-12)
+- Added a functional Settings section to the sidebar.
+- Appearance: Dark / Light mode persists in localStorage.
+- Help & Support: Field Guide navigation, system diagnostics, keyboard shortcut help, and support guidance.
+- Privacy Center: analytics preference, camera permission preference, privacy summary export, and local-record clearing with confirmation.
+- Accessibility: reduced-motion preference and responsive touch-friendly controls.
+- Camera permission preference is enforced before opening the camera.
+- All buttons receive a brief siren-style visual flicker on click and then settle into a professional blue 3D state.
+- Existing siren control remains available; sound is opt-in and disabled by default until enabled by the operator.
+
+REFERENCE THEME UPDATE
+- Light theme follows the supplied Field Guide reference: pale blue workspace, translucent blue-white glass cards, dark navy typography, restrained cyan/blue borders and professional 3D blue active controls.
+- Dark theme uses a fluorescent electric-blue/cyan field-operations finish with dark navy glass surfaces and controlled glow accents.
+- Theme switching remains functional and persists with localStorage.

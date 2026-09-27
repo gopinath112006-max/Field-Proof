@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-label="FieldCheck logo">
+<defs>
+  <linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0a2b56"/><stop offset=".55" stop-color="#0b78ff"/><stop offset="1" stop-color="#66dcff"/></linearGradient>
+  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset=".55" stop-color="#9edcff"/><stop offset="1" stop-color="#0878ff"/></linearGradient>
+  <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<path d="M110 10 190 38v62c0 54-34 89-80 110-46-21-80-56-80-110V38z" fill="#041326" stroke="url(#s)" stroke-width="8" filter="url(#glow)"/>
+<path d="M110 25 174 48v51c0 43-26 72-64 91-38-19-64-48-64-91V48z" fill="none" stroke="#123f73" stroke-width="3"/>
+<path d="M101 58h18v19l12 13v51c0 8-6 14-14 14h-14c-8 0-14-6-14-14V90l12-13z" fill="url(#g)" stroke="#dff7ff" stroke-width="3"/>
+<path d="M91 93h38M91 105h38M91 117h38" stroke="#0878ff" stroke-width="3" opacity=".8"/>
+<path d="m139 136 13 13 30-34" fill="none" stroke="#67c7ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="110" y="190" text-anchor="middle" font-family="Arial, sans-serif" font-size="19" font-weight="800" fill="#f5f9ff">FIELDCHECK</text>
+</svg>

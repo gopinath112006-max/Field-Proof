@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#05070a" />
+  <title>DTB — Drug Testing Buddy | Digital Field Drug Testing</title>
+  <link rel="icon" href="fieldcheck-logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="toast" class="toast"></div>
+
+  <section id="loginScreen" class="login-screen">
+    <div class="login-glow glow-red"></div>
+    <div class="login-glow glow-blue"></div>
+    <div class="login-card auth-card">
+      <div class="fieldcheck-front-logo"><img src="fieldcheck-logo.svg" alt="FieldCheck logo"><div><strong>FieldCheck</strong><span>Test. Verify. Record.</span></div></div>
+      <div class="brand-lockup">
+        <div class="brand-mark"><span>DTB</span><b>✓</b></div>
+        <div>
+          <div class="brand-name">Drug<span> Testing Buddy</span></div>
+          <div class="brand-tag">TEST. VERIFY. RECORD.</div>
+        </div>
+      </div>
+      <div class="login-divider"></div>
+      <h1>Secure Field Access</h1>
+      <p class="muted">Sign in securely to the DTB field operations console.</p>
+
+      <label>Email address</label>
+      <input id="loginEmail" type="email" placeholder="officer@example.com" autocomplete="email" />
+      <label>Password</label>
+      <input id="loginPassword" type="password" placeholder="Enter your password" autocomplete="current-password" />
+
+      <button class="btn btn-red full" id="loginBtn">Sign In</button>
+      <button class="btn btn-outline full google-btn" id="googleBtn"><span class="google-g">G</span> Continue with Google</button>
+      <button class="btn btn-outline full" id="signupBtn">Create Account</button>
+      <button class="btn btn-outline full" id="demoBtn">Enter Demo Mode</button>
+      <button class="biometric-btn" id="biometricBtn" type="button" onclick="startBiometricLogin()"><span class="fingerprint">⌁</span><span><strong>Biometric Login</strong><small>Use device biometrics when supported</small></span><span class="arrow">›</span></button>
+
+      <div id="authMessage" class="auth-message"></div>
+      <div class="login-status"><span class="dot online"></span> Local/offline records remain available after authentication</div>
+      <small>Prototype interface • Presumptive field testing only</small>
+    </div>
+  </section>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img class="sidebar-logo" src="fieldcheck-logo.svg" alt="FieldCheck">
+        <div class="brand-mark small"><span>DTB</span><b>✓</b></div>
+        <div>
+          <strong>Drug Testing Buddy</strong>
+          <small>FIELD OPERATIONS</small>
+        </div>
+      </div>
+
+      <div class="connection-card" id="connectionCard">
+        <span class="dot online" id="connectionDot"></span>
+        <div><strong id="connectionText">ONLINE</strong><small>Sync available</small></div>
+      </div>
+
+      <div class="sidebar-nav-scroll" aria-label="FieldCheck navigation">
+      <nav>
+        <button class="nav-item active" data-page="dashboard"><i>⌂</i>Dashboard</button>
+        <button class="nav-item primary-nav" data-page="newtest"><i>◎</i>New Field Test</button>
+        <button class="nav-item" data-page="history"><i>▤</i>Test History</button>
+        <button class="nav-item" data-page="reports"><i>▥</i>Reports</button>
+        <button class="nav-item" data-page="locations"><i>⌖</i>Locations</button>
+        <button class="nav-item" data-page="offline"><i>⇩</i>Offline Records</button>
+        <button class="nav-item" data-page="sync"><i>↻</i>Sync Center</button>
+        <button class="nav-item" data-page="guide"><i>?</i>Field Guide</button>
+        <button class="nav-item" data-page="settings"><i>⚙</i>Settings</button>
+      </nav>
+      </div>
+
+      <div class="sidebar-bottom">
+        <button class="nav-item" data-page="profile"><i>◉</i>Profile</button>
+        <button class="nav-item" id="logoutBtn"><i>↪</i>Logout</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">FIELD OPERATIONS / <span id="pageLabel">DASHBOARD</span></div>
+          <h2 id="pageTitle">Command Dashboard</h2>
+        </div>
+        <div class="top-actions">
+          <div class="top-theme-scroll" aria-label="Theme selection">
+            <button class="top-theme-panel" id="topDarkTheme" onclick="setTheme('dark')" aria-pressed="false">
+              <span class="top-theme-icon">☾</span><span><strong>Dark</strong><small>Fluorescent</small></span>
+            </button>
+            <button class="top-theme-panel" id="topLightTheme" onclick="setTheme('light')" aria-pressed="false">
+              <span class="top-theme-icon">☀</span><span><strong>Light</strong><small>Field Guide</small></span>
+            </button>
+          </div>
+          <button class="siren-toggle" id="sirenToggle" title="Enable or disable visual siren alert">🔇 SIREN OFF</button>
+          <button class="icon-btn" id="connectionToggle" title="Toggle demo connection">⌁</button>
+          <div class="operator">
+            <div class="avatar">AA</div>
+            <div><strong>Abdul Aasif</strong><small>Operator ID: DTB-OP-3076</small></div>
+          </div>
+        </div>
+      </header>
+
+      <div id="pageContainer"></div>
+
+      <div id="sirenBeacon" class="siren-beacon" aria-live="polite"><span class="siren-lamp">●</span><div><strong>ALERT BEACON</strong><small>Emergency sound disabled</small></div></div>
+
+  <footer>
+        <span><b>DTB</b> • Drug Testing Buddy</span>
+        <span>Presumptive field-test result. Laboratory confirmation is required.</span>
+      </footer>
+    </main>
+  </div>
+
+  <div id="cameraModal" class="modal hidden">
+    <div class="modal-card camera-card">
+      <div class="modal-head"><div><span class="eyebrow">NEW FIELD TEST</span><h3>Capture Test Result</h3></div><button class="close" data-close="cameraModal">×</button></div>
+      <div class="camera-stage" id="cameraStage">
+        <div class="camera-top-badge"><span class="live-dot"></span> LIVE CAMERA • HTTPS / LOCALHOST</div>
+        <div class="camera-location" id="cameraLocation"><span class="location-pin">⌖</span><span><b>GPS LOCATION</b><small>Waiting for location permission…</small></span></div>
+        <video id="cameraVideo" autoplay playsinline></video>
+        <canvas id="captureCanvas" class="hidden"></canvas>
+        <div class="frame-guide"></div>
+        <div class="ref-zone"><span>REFERENCE CARD</span></div>
+        <div class="capture-preview hidden" id="capturePreview"><img id="capturedPreview" alt="Captured field test preview"><button class="btn btn-outline" id="retakeBtn">Retake</button></div>
+        <div class="camera-status" id="cameraStatus">
+          <span class="check info">•</span> Camera ready — position the test kit inside the guide.
+        </div>
+        <div class="camera-detection-panel" aria-label="Camera detection checklist">
+          <div class="detection-card" id="detectKit"><b>01</b><span>TEST KIT</span><small>Place kit in frame</small></div>
+          <div class="detection-card" id="detectRef"><b>02</b><span>REFERENCE CARD</span><small>Keep colour card visible</small></div>
+          <div class="detection-card" id="detectRegion"><b>03</b><span>TEST REGION</span><small>Keep result area clear</small></div>
+          <div class="detection-card" id="detectGuard"><b>04</b><span>NON-KIT GUARD</span><small>Face/other colour is not a test</small></div>
+          <div class="detection-card" id="detectReady"><b>05</b><span>CAPTURE</span><small>Save as field record</small></div>
+        </div>
+      </div>
+      <div class="camera-controls">
+        <button class="btn btn-outline" id="uploadBtn">Import Image</button>
+        <input id="imageInput" type="file" accept="image/*" hidden>
+        <button class="capture-button" id="captureBtn"><span></span></button>
+        <button class="icon-btn" id="flashBtn">⚡</button>
+      </div>
+      <p class="camera-note">Place the existing test kit and reference color card inside the frame. The capture is saved locally first and can be uploaded to Firebase Storage when configured.</p>
+    </div>
+  </div>
+
+  <div id="analysisModal" class="modal hidden">
+    <div class="modal-card analysis-card">
+      <div class="analysis-orbit"><div class="orbit-core">AI</div></div>
+      <h3>Analyzing Result</h3>
+      <p class="muted">Calibrating the captured image...</p>
+      <div class="analysis-list">
+        <div class="analysis-step done">✓ <span>Calibrating reference color</span></div>
+        <div class="analysis-step done">✓ <span>Detecting test region</span></div>
+        <div class="analysis-step active">● <span>Comparing color response</span></div>
+        <div class="analysis-step">○ <span>Classifying result</span></div>
+        <div class="analysis-step">○ <span>Generating secure record</span></div>
+      </div>
+      <small>Prototype classification — not laboratory confirmation.</small>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

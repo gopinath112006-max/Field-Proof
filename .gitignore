@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.firebase/
+coverage/
