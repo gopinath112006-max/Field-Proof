@@ -1,0 +1,56 @@
+rules_version = '2';
+
+/**
+ * FieldCheck Firestore rules — deny by default.
+ *
+ * Every collection other than the ones named below is unreadable and
+ * unwritable. There is no wildcard allow, so a collection added later without a
+ * rule is closed rather than open.
+ *
+ * A record is owned by the account that uploaded it. An operator can read and
+ * write their own records and nobody else's. There is no list, export or
+ * cross-operator read path: FieldCheck stores one operator's field observations
+ * and nothing more.
+ *
+ * Deploy with:
+ *   firebase deploy --only firestore:rules
+ *
+ * Security rules are not enforced by the client SDK. Until these rules are
+ * deployed, a Firestore database created with test-mode rules is world-writable
+ * and every record is readable by anyone who guesses the project id.
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** A record must belong to the caller and name them as its owner. */
+    function isValidRecord() {
+      return isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id is string
+        && request.resource.data.id.size() <= 64
+        && request.resource.data.observation in ['positive', 'negative', 'unreadable'];
+    }
+
+    match /testRecords/{recordId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isValidRecord();
+      allow update: if isValidRecord()
+                    && resource.data.userId == request.auth.uid;
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // Nothing else is readable or writable.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
