@@ -1,13 +1,25 @@
 {
-  "name": "dtb-drug-testing-buddy-enhanced",
-  "version": "2.0.0",
+  "name": "dtb-fieldcheck",
+  "version": "3.0.0",
   "private": true,
+  "type": "module",
+  "description": "FieldCheck - capture, verify and record field-test evidence. Not a substance identification or laboratory instrument.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "node tools/syntax-check.mjs src tools",
+    "lint:css": "node tools/css-check.mjs src/styles/main.css index.html src",
+    "verify": "npm run lint && npm run lint:css && npm run test"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "vitest": "^5.0.2"
   }
 }

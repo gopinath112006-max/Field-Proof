@@ -12,3 +12,9 @@ Thumbs.db
 npm-debug.log*
 .firebase/
 coverage/
+
+# public/config.js holds the Firebase web config and the API base URL for a
+# deployment. The template is committed; the real file is not. The Firebase web
+# config is a public identifier rather than a secret, but keeping per-deployment
+# values out of the repository avoids a stale project being shipped by accident.
+dtb_modified/public/config.js
