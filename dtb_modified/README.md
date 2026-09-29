@@ -1,11 +1,18 @@
-# FieldCheck
+# FieldProof — developer guide (application directory)
 
-Capture, verify and record field-test evidence.
+This directory contains the application. The product overview, workflow
+narrative and limitations live in the **[repository README](../README.md)**.
 
-**FieldCheck does not identify controlled substances.** It has no substance
-model, no reference database and no image classification. What a record contains
-is an operator's observation of a physical colorimetric test kit, read by eye.
-Presumptive drug classification requires confirmatory laboratory analysis.
+> **Naming.** The in-app wordmark and npm package name are still `FieldCheck` /
+> `dtb-fieldcheck` (`src/config.js` exports `config.appName = "FieldCheck"`).
+> Renaming working code was out of scope when the repository was prepared.
+> The product is FieldProof.
+
+> **FieldProof provides presumptive field-test interpretation. It does not
+> provide definitive controlled-substance identification and does not replace
+> laboratory confirmation.** The classifier's reference profiles and thresholds
+> are prototype engineering presets (`NOMINAL_PRESET_V1`) that require empirical
+> physical-kit validation.
 
 ---
 
@@ -15,23 +22,34 @@ Presumptive drug classification requires confirmatory laboratory analysis.
 - Hashes the captured bytes with SHA-256. The digest is recomputable later, so
   "this image is the image that was recorded" is a checkable claim rather than a
   label.
-- Records the operator's reading of the kit: `positive`, `negative`, or
-  `unreadable`. Nothing else infers it.
+- Gates the frame on a pixel-level quality check (resolution, exposure,
+  sharpness, contrast). A frame that fails the gate cannot produce a conclusive
+  classification.
+- Detects a physical reference colour card in the frame and derives a per-channel
+  von Kries calibration transform from it.
+- Runs a **deterministic colorimetric classifier** (Lab, ΔE76) that returns
+  `positive`, `negative` or `inconclusive`, always labelled presumptive. It is a
+  heuristic with no model and no training data.
+- Records the operator's own reading of the kit separately — `positive`,
+  `negative`, or `unreadable` — behind an explicit acknowledgement. The automated
+  classification never overwrites the operator observation, and vice versa.
+- Signs the canonical record payload with **ECDSA P-256 / SHA-256** and
+  re-verifies it, reporting `VERIFIED`, `SIGNATURE INVALID` or `UNSIGNED`.
 - Captures GPS and accuracy when the operator grants permission, and says
   "permission denied" rather than storing a fabricated `0,0`.
-- Compares the frame's dominant colour against a reference swatch to help the
-  operator aim the camera. This is a framing aid only; it never writes or
-  influences the observation.
 - Works offline. Records live in `localStorage` until the operator signs in and
   syncs, and a record is marked synced only after the cloud write is
   acknowledged.
-- Exports a PDF that states plainly that it records an operator observation and
-  not a laboratory result.
+- Exports a PDF that states plainly that it records a presumptive field
+  observation and not a laboratory result.
 
 ## What it does not do
 
 - Identify a substance, or infer an observation the operator did not make.
-- Claim forensic standing, chain of custody, tamper evidence, or a signature.
+- Produce a laboratory result, a confirmation, or a legal-admissibility claim.
+- Claim scientifically validated field thresholds — the current presets are
+  engineering values awaiting physical-kit validation.
+- Establish organisational identity from the local browser signing key.
 - Fabricate a map, chart, GPS fix or health status. Missing data reads as
   missing.
 - Collect analytics. The only outbound requests are the ones the operator
@@ -124,6 +142,43 @@ python -m pytest backend -q
 
 ---
 
+## Module map
+
+| Module | Responsibility |
+| --- | --- |
+| `src/lib/image-quality.js` | Resolution, Rec. 601 luminance, discrete-Laplacian sharpness, contrast, shadow/highlight clipping. Produces a 0–100 score and an accept/reject decision. |
+| `src/lib/guard.js` | Capture guard. Detects a contiguous reference-swatch region (192×128 downsample, RGB tolerance 62, largest 4-connected component, coverage and fill thresholds). Never sets an observation. |
+| `src/lib/calibration.js` | sRGB → XYZ → CIE L\*a\*b\* (D65), ΔE76, reference-swatch von Kries gain transform, colour normalisation. |
+| `src/lib/classifier.js` | Reaction ROI extraction, Lab profile matching, deterministic positive / negative / inconclusive decision, confidence clamped to 15–95%, reference-card intrusion check. |
+| `src/lib/hash.js` | SHA-256 over the decoded image bytes, and client-side digest re-verification. |
+| `src/lib/crypto.js` | ECDSA P-256 / SHA-256 key pair management, canonical payload serialisation, signing, tamper verification. |
+| `src/lib/records.js` | Record schema v3, v1/v2 migration, localStorage persistence, dashboard aggregation, record-ID generation. |
+| `src/lib/sync.js` | Sync readiness state machine and the upload loop. A record is never marked synced without a confirmed write. |
+| `src/lib/evaluation.js` | Offline metrics (accuracy, precision, recall, F1, confusion matrix, rejection rate) computed only from explicitly labelled data. Contains no benchmark values. |
+| `src/lib/demo.js` | Procedurally generated synthetic frames and a synthetic tamper demo. Demo records never leave the device. |
+| `src/lib/pdf.js` | PDF export via jsPDF with a dependency-free single-page fallback, plus a plain-text privacy summary. |
+| `src/lib/backend.js` | Client for the FastAPI validation service. Compares digests, classifies nothing. |
+| `src/lib/firebase.js` | Optional Auth, Firestore write, Storage frame upload. |
+
+## Classifier configuration
+
+`CLASSIFIER_CONFIG` in `src/lib/classifier.js` is frozen and `Object.freeze`d:
+
+| Setting | Value |
+| --- | --- |
+| `maxPositiveDeltaE` | 32.0 |
+| `maxNegativeDeltaE` | 28.0 |
+| `ambiguityMarginDeltaE` | 8.0 |
+| `minConfidenceThreshold` | 50 |
+| `minQualityScore` | 40 |
+| `calibrationProvenance` | `NOMINAL_PRESET_V1` (requires empirical field-trial dataset) |
+
+Confidence is hard-clamped to 15–95%; a presumptive field test is never reported
+as certain. A black reference pad cannot be auto-matched, because near-black is
+indistinguishable from shadow at the guard's tolerance.
+
+---
+
 ## Validation API
 
 `backend/` is an optional FastAPI service. It checks image quality and integrity
@@ -148,6 +203,8 @@ uvicorn main:app --reload --port 8000
 The digest returned by `/api/validate` is computed over the same bytes the
 browser hashes, so a stored record's digest can be checked against the service
 response. The client reports a mismatch rather than overwriting either value.
+
+Pillow is used for size and format only, never for pixel interpretation.
 
 ### Cross-origin access
 
@@ -180,7 +237,8 @@ firebase deploy --only hosting,firestore:rules,storage
 `firestore.rules` and `storage.rules` are deny-by-default. Every collection
 without an explicit rule is closed, and a record is readable and writable only
 by the account that uploaded it. There is no list-all, export or cross-operator
-read path.
+read path. Storage frames live at `dtb/{uid}/{recordId}.jpg` and a write
+requires the owning Firestore record to already exist.
 
 **Rules are not enforced by the client SDK.** A database created in test mode is
 world-writable and every record is readable by anyone who guesses the project
@@ -194,8 +252,17 @@ firebase deploy --only firestore:rules,storage
 
 ## Testing notes
 
-- 82 tests across records, guard, hashing, sync, formatting, PDF and config
-  resolution, plus 13 backend tests.
+Measured on the frozen prototype: **147 frontend tests** across 12 vitest files,
+plus **13 backend tests** (160 total), 29 files syntax-checked, 0 missing CSS
+classes, production build successful.
+
+- Coverage spans calibration, classification, image quality, crypto, records and
+  migration, sync, PDF, guard, hashing, config resolution and offline metrics.
+- `tests/firestore.rules.test.mjs` and `tests/storage.rules.test.mjs` exercise the
+  security rules against the Firebase emulator and are not part of the default
+  vitest run.
+- `tests/fixtures/dataset.js` supplies procedurally generated labelled samples.
+  There are no hard-coded accuracy figures anywhere in the codebase.
 - The PDF tests parse the xref table and assert each offset points at a real
   object header. The v1 fallback measured offsets in UTF-8 bytes but wrote one
   byte per character, so every offset after a multi-byte character was wrong and
@@ -209,15 +276,18 @@ firebase deploy --only firestore:rules,storage
 dtb_modified/
   index.html
   public/config.js          runtime configuration (git-ignored)
+  public/config.template.js committed template with placeholders
   src/
     main.js                 entry, routing, capture and save flow
     config.js               API and Firebase resolution
     capture.js              camera, image import, GPS, observation modal
-    lib/                    records, hash, guard, sync, display, pdf,
-                            backend, firebase, dom, format
-    pages/                  dashboard, records
+    lib/                    image-quality, guard, calibration, classifier,
+                            hash, crypto, records, sync, pdf, evaluation,
+                            demo, backend, firebase, dom, format, display, toast
+    pages/                  dashboard, records, detail, system
     styles/main.css
-  tests/
+  tests/                    vitest suites, Firebase rules suites, fixtures
+  tools/                    syntax-check.mjs, css-check.mjs, css-audit.mjs
   backend/main.py           optional validation API
   firestore.rules
   storage.rules
