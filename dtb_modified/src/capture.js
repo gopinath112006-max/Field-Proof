@@ -1,19 +1,22 @@
 /**
- * Capture flow: camera -> reference-swatch check -> operator observation -> record.
+ * Capture flow: camera -> reference-card calibration -> quality check -> automated classification -> operator review -> signed record.
  *
- * Replaces the v1 sequence, which ran a 2.6-second fake "AI POWERED" progress
- * animation and then silently assigned `result: "inconclusive"` because no
- * code path could ever produce a classification.
- *
- * The observation is the only classification in a record, and it is typed by a
- * human reading a physical kit.
+ * Workflow:
+ * 1. Capture/import frame
+ * 2. Assess image quality (resolution, blur, exposure)
+ * 3. Match reference card swatches & compute illumination calibration
+ * 4. Extract reaction ROI & perform explainable colorimetric classification
+ * 5. Operator review: human operator verifies physical kit, confirms reading, and signs
  */
 
 import { $, closeModal, escapeHtml, openModal } from "./lib/dom.js";
-import { coveragePct } from "./lib/format.js";
+import { coveragePct, classificationPill } from "./lib/format.js";
 import { matchReferenceSwatch } from "./lib/guard.js";
 import { sha256HexFromDataUrl } from "./lib/hash.js";
 import { validateFrame, API_STATUS } from "./lib/backend.js";
+import { assessImageQuality } from "./lib/image-quality.js";
+import { classifyImageDataUrl } from "./lib/classifier.js";
+import { DEMO_CASES } from "./lib/demo.js";
 import { state } from "./state.js";
 
 const CAMERA_CONSTRAINTS = {
@@ -45,14 +48,9 @@ export function updateCameraLocation(gps) {
 }
 
 /**
- * Render the detection checklist from real state.
- *
- * v1 called `updateCameraDetection("ready")` the moment the camera opened,
- * which painted TEST KIT, REFERENCE CARD and NON-KIT GUARD with a green tick
- * before a single frame existed. The guard cards are now driven entirely by the
- * measured result and can show a rejection.
+ * Render the detection checklist from real measured state.
  */
-function paintDetection(guard, phase) {
+function paintDetection(guard, phase, quality = null, classification = null) {
   const set = (id, cls, label, detail) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -61,11 +59,6 @@ function paintDetection(guard, phase) {
     const small = el.querySelector("small");
     if (small) small.textContent = label ? detail : small.dataset.default || detail;
   };
-
-  const swatch = document.getElementById("detectRef");
-  const region = document.getElementById("detectRegion");
-  const guardCard = document.getElementById("detectGuard");
-  const ready = document.getElementById("detectReady");
 
   if (phase === "no-frame") {
     set("detectKit", "active", "", "Awaiting capture");
@@ -78,14 +71,39 @@ function paintDetection(guard, phase) {
 
   const accepted = Boolean(guard?.accepted);
   set("detectKit", "ok", "", "Kit region present in frame");
-  set("detectRef", accepted ? (guard.weak ? "warn" : "ok") : "fail",
+
+  // Step 2: Reference card detection & calibration
+  set(
+    "detectRef",
+    accepted ? (guard.weak ? "warn" : "ok") : "fail",
     "",
-    accepted ? `${guard.colorName} · ${coveragePct(guard.coverage)}% of frame` : "No reference colour found");
-  set("detectRegion", accepted ? "ok" : "fail", "",
-    accepted ? `${guard.aspect}:1 region` : "Unusable colour match");
-  set("detectGuard", accepted ? (guard.weak ? "warn" : "ok") : "warn", "",
-    accepted ? `Accepted${guard.weak ? " (weak)" : ""}` : "No swatch found — record will be flagged");
-  set("detectReady", "active", "", "Record your reading");
+    accepted ? `${guard.colorName} calibrated · ${coveragePct(guard.coverage)}%` : "No reference card matched"
+  );
+
+  // Step 3: Image quality gate
+  const qualityOk = quality ? quality.acceptable : accepted;
+  set(
+    "detectRegion",
+    qualityOk ? "ok" : "warn",
+    "",
+    quality
+      ? (quality.acceptable ? `Quality acceptable (${quality.score}/100)` : `Quality low: ${quality.reasons[0] || "check lighting"}`)
+      : (accepted ? `${guard.aspect}:1 region` : "Unusable colour match")
+  );
+
+  // Step 4: Automated classification
+  const classOk = classification && classification.classification !== "inconclusive";
+  set(
+    "detectGuard",
+    classOk ? "ok" : "warn",
+    "",
+    classification
+      ? `${classification.label} (${classification.confidence}% conf)`
+      : (accepted ? `Accepted${guard.weak ? " (weak)" : ""}` : "No swatch found — record flagged")
+  );
+
+  // Step 5: Operator review & digital signature
+  set("detectReady", "active", "", "Review reading & sign");
 }
 
 export async function requestCameraGps() {
@@ -190,6 +208,8 @@ function resetCaptureState() {
   state.camera.imageDataUrl = null;
   state.camera.blob = null;
   state.camera.guard = null;
+  state.camera.quality = null;
+  state.camera.classification = null;
   state.camera.capturing = false;
   const preview = $("#capturePreview");
   if (preview) preview.classList.add("hidden");
@@ -202,9 +222,9 @@ function resetCaptureState() {
   paintDetection(null, "no-frame");
 }
 
-/** Grab a frame from the video element and run the swatch check on it. */
+/** Grab a frame from the video element and run quality, calibration, and classification. */
 export async function captureFrame() {
-  if (state.camera.capturing) return null; // one capture in flight at a time
+  if (state.camera.capturing) return null;
   const video = $("#cameraVideo");
   const canvas = $("#captureCanvas");
   if (!video || !canvas) return null;
@@ -236,7 +256,14 @@ export async function captureFrame() {
 
     const guard = await matchReferenceSwatch(dataUrl);
     state.camera.guard = guard;
-    paintDetection(guard, "captured");
+
+    const quality = await assessImageQuality(dataUrl);
+    state.camera.quality = quality;
+
+    const classification = await classifyImageDataUrl(dataUrl, guard);
+    state.camera.classification = classification;
+
+    paintDetection(guard, "captured", quality, classification);
 
     const preview = $("#capturePreview");
     const image = $("#capturedPreview");
@@ -244,16 +271,16 @@ export async function captureFrame() {
     if (preview) preview.classList.remove("hidden");
     video.classList.add("hidden");
 
-    if (guard.accepted) {
+    if (!quality.acceptable) {
+      setStatus(`Image quality insufficient: ${quality.reasons.join(", ")}. Retake recommended.`, "error");
+    } else if (guard.accepted) {
       setStatus(
-        guard.weak
-          ? `Weak ${guard.colorName} match (${coveragePct(guard.coverage)}% of frame). Consider a retake, or record your reading anyway.`
-          : `${guard.colorName} reference region covers ${coveragePct(guard.coverage)}% of the frame. Now read the kit and record it.`,
-        guard.weak ? "info" : "success"
+        `${guard.colorName} reference card calibrated. ${classification.label} (${classification.confidence}% algorithm confidence). Click button to review and sign.`,
+        classification.classification === "inconclusive" ? "info" : "success"
       );
     } else {
       setStatus(
-        `No reference colour found: ${guard.reason}. You can still record your reading, but the frame will be flagged.`,
+        `Reference card not found: ${guard.reason}. Classification is inconclusive. You can still record your observation.`,
         "error"
       );
     }
@@ -271,6 +298,8 @@ export async function retakeFrame() {
   state.camera.imageDataUrl = null;
   state.camera.blob = null;
   state.camera.guard = null;
+  state.camera.quality = null;
+  state.camera.classification = null;
   const preview = $("#capturePreview");
   if (preview) preview.classList.add("hidden");
   const video = $("#cameraVideo");
@@ -296,19 +325,33 @@ export async function importImage(file) {
     });
     state.camera.imageDataUrl = dataUrl;
     state.camera.blob = file;
+
     const guard = await matchReferenceSwatch(dataUrl);
     state.camera.guard = guard;
-    paintDetection(guard, "captured");
+
+    const quality = await assessImageQuality(dataUrl);
+    state.camera.quality = quality;
+
+    const classification = await classifyImageDataUrl(dataUrl, guard);
+    state.camera.classification = classification;
+
+    paintDetection(guard, "captured", quality, classification);
+
     const image = $("#capturedPreview");
     if (image) image.src = dataUrl;
     const preview = $("#capturePreview");
     if (preview) preview.classList.remove("hidden");
-    setStatus(
-      guard.accepted
-        ? `Imported. ${guard.colorName} reference region covers ${coveragePct(guard.coverage)}% of the frame.`
-        : `Imported, but no reference colour was found: ${guard.reason}`,
-      guard.accepted ? "success" : "error"
-    );
+
+    if (!quality.acceptable) {
+      setStatus(`Imported, but quality is insufficient: ${quality.reasons.join(", ")}. Retake recommended.`, "error");
+    } else {
+      setStatus(
+        guard.accepted
+          ? `Imported. ${guard.colorName} calibrated. ${classification.label} (${classification.confidence}% algorithm confidence).`
+          : `Imported, but no reference card matched: ${guard.reason}`,
+        guard.accepted ? "success" : "error"
+      );
+    }
     return guard;
   } catch (error) {
     setStatus(`Import failed: ${error.message}`, "error");
@@ -317,8 +360,7 @@ export async function importImage(file) {
 }
 
 /**
- * Populate and show the observation form.
- * This replaces the fake "Analyzing Result" modal entirely.
+ * Populate and show the observation form with automated classification & review.
  */
 export async function openObservationForm() {
   if (!state.camera.imageDataUrl) {
@@ -326,6 +368,8 @@ export async function openObservationForm() {
     return;
   }
   const guard = state.camera.guard;
+  const quality = state.camera.quality || await assessImageQuality(state.camera.imageDataUrl);
+  const classification = state.camera.classification || await classifyImageDataUrl(state.camera.imageDataUrl, guard);
   const digest = await sha256HexFromDataUrl(state.camera.imageDataUrl);
   const validation = await validateFrame(state.camera.imageDataUrl);
 
@@ -333,6 +377,21 @@ export async function openObservationForm() {
   if (summary) {
     summary.innerHTML = `
       <img class="observation-preview" src="${escapeHtml(state.camera.imageDataUrl)}" alt="Frame to be recorded">
+      <div class="card" style="margin:10px 0 14px;padding:12px;border:1px solid #1b2834;background:rgba(9,15,22,0.85)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div><span class="eyebrow" style="font-size:8px">AUTOMATED COLORIMETRIC ANALYSIS</span><h4 style="margin:2px 0 0;font-size:14px">${escapeHtml(classification.label)}</h4></div>
+          ${classificationPill(classification.classification)}
+        </div>
+        <p class="muted" style="margin:0 0 8px;font-size:9.5px;line-height:1.45">${escapeHtml(classification.reason)}</p>
+        <div style="display:flex;gap:14px;font-size:9.5px;color:var(--muted)">
+          <span><b>Confidence:</b> ${classification.confidence}%</span>
+          <span><b>Calibration:</b> ${guard?.accepted ? `${guard.colorName} calibrated` : "uncalibrated"}</span>
+          <span><b>Quality:</b> ${quality.acceptable ? "acceptable" : "low"}</span>
+        </div>
+        <div style="margin-top:6px;font-size:9px;color:#788896">
+          <small>Algorithmic match confidence in observed color transition. Not chemical confirmation.</small>
+        </div>
+      </div>
       <dl class="observation-facts">
         <div><dt>Reference swatch</dt><dd>${guard?.accepted ? escapeHtml(guard.colorName) : "no match"}</dd></div>
         <div><dt>Coverage</dt><dd>${guard?.accepted ? `${coveragePct(guard.coverage)}%` : "—"}</dd></div>
@@ -354,6 +413,18 @@ export async function openObservationForm() {
   if (form) form.reset();
   const positive = document.getElementById("obsPositive");
   const referral = document.getElementById("obsReferral");
+
+  // Pre-select operator radio button according to automated analysis, but leave operator in charge
+  if (classification.classification === "positive") {
+    if (positive) positive.checked = true;
+  } else if (classification.classification === "negative") {
+    const negative = form?.querySelector('input[name="observation"][value="negative"]');
+    if (negative) negative.checked = true;
+  } else {
+    const unreadable = form?.querySelector('input[name="observation"][value="unreadable"]');
+    if (unreadable) unreadable.checked = true;
+  }
+
   if (positive && referral) {
     const syncReferral = () => {
       if (positive.checked) {
@@ -387,4 +458,40 @@ export function collectObservation(form) {
     acknowledged: data.get("acknowledged") === "on",
     sampleType: state.camera.sampleType || ""
   };
+}
+
+/**
+ * Load a deterministic synthetic demo test frame into the capture pipeline.
+ */
+export async function loadDemoFrame(demoKey) {
+  const demoCase = DEMO_CASES[demoKey];
+  if (!demoCase) return null;
+  openCamera();
+  const dataUrl = demoCase.getFrame();
+  state.camera.imageDataUrl = dataUrl;
+  const guard = await matchReferenceSwatch(dataUrl);
+  state.camera.guard = guard;
+  const quality = await assessImageQuality(dataUrl);
+  state.camera.quality = quality;
+  const classification = await classifyImageDataUrl(dataUrl, guard);
+  state.camera.classification = classification;
+
+  paintDetection(guard, "captured", quality, classification);
+
+  const preview = $("#capturePreview");
+  const image = $("#capturedPreview");
+  if (image) image.src = dataUrl;
+  if (preview) preview.classList.remove("hidden");
+  const video = $("#cameraVideo");
+  if (video) video.classList.add("hidden");
+
+  if (!quality.acceptable) {
+    setStatus(`Demo loaded: Quality gate rejected (${quality.reasons.join(", ")})`, "error");
+  } else {
+    setStatus(
+      `Demo loaded: ${classification.label} (${classification.confidence}% conf) · ${guard.accepted ? `${guard.colorName} card calibrated` : "uncalibrated"}`,
+      classification.classification === "inconclusive" ? "info" : "success"
+    );
+  }
+  return { guard, quality, classification };
 }

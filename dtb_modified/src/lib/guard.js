@@ -18,6 +18,8 @@
  * a canvas; `matchReferenceSwatch` only handles the browser plumbing.
  */
 
+import { computeCalibrationTransform } from "./calibration.js";
+
 export const SAMPLE_WIDTH = 192;
 export const SAMPLE_HEIGHT = 128;
 
@@ -157,7 +159,7 @@ export function analysePixels(data, width, height, options = {}) {
     if (fill < minFill) continue;
     const score = coverage * fill * (aspect >= ELONGATED_ASPECT ? 1.5 : 0.7);
     if (!winner || score > winner.score) {
-      winner = { swatchIndex, score, coverage, fill, aspect, area: comp.area };
+      winner = { swatchIndex, score, coverage, fill, aspect, area: comp.area, comp };
     }
   }
 
@@ -170,9 +172,40 @@ export function analysePixels(data, width, height, options = {}) {
       fill: 0,
       confidence: 0,
       weak: false,
+      observedRgb: null,
+      calibration: { calibrated: false, status: "uncalibrated" },
       reason: "no contiguous reference-swatch region found in the frame"
     };
   }
+
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+  for (let y = winner.comp.minY; y <= winner.comp.maxY; y += 1) {
+    const rowOffset = y * width;
+    for (let x = winner.comp.minX; x <= winner.comp.maxX; x += 1) {
+      const idx = rowOffset + x;
+      if (nearest[idx] === winner.swatchIndex) {
+        const o = idx * 4;
+        sumR += data[o];
+        sumG += data[o + 1];
+        sumB += data[o + 2];
+        count += 1;
+      }
+    }
+  }
+  const observedRgb = count
+    ? [Math.round(sumR / count), Math.round(sumG / count), Math.round(sumB / count)]
+    : [...swatches[winner.swatchIndex].rgb];
+
+  const calibration = computeCalibrationTransform([
+    {
+      name: swatches[winner.swatchIndex].name,
+      observedRgb,
+      nominalRgb: swatches[winner.swatchIndex].rgb
+    }
+  ]);
 
   const confidence = Math.min(1, (winner.coverage / 0.25) * winner.fill);
   const weak = confidence < WEAK_CONFIDENCE;
@@ -184,6 +217,8 @@ export function analysePixels(data, width, height, options = {}) {
     fill: Number(winner.fill.toFixed(3)),
     confidence: Number(confidence.toFixed(3)),
     weak,
+    observedRgb,
+    calibration,
     reason: weak
       ? `weak ${swatches[winner.swatchIndex].name} match (${Math.round(winner.coverage * 100)}% of frame) -- consider a retake with the swatch filling more of the frame`
       : `${swatches[winner.swatchIndex].name} region covers ${Math.round(winner.coverage * 100)}% of the frame`

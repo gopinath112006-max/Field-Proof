@@ -276,5 +276,17 @@ export function newtest(capabilities) {
       ${blocking.length ? `<p class="checklist-blocked">Blocked: ${blocking.map((c) => escapeHtml(c.label)).join(", ")}.</p>` : ""}
       <p class="muted sample-hint">Sample type: <strong>${escapeHtml(state.camera.sampleType || "not selected")}</strong></p>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="section-title"><div><h4>Hackathon Demo Controls</h4><small>Deterministic synthetic test cases for judging.</small></div><span class="status-pill synced">DEMO MODE</span></div>
+    <p class="muted" style="margin-bottom:12px">Demonstrate end-to-end capture, calibration, colorimetric classification, and tamper detection using safe procedural test cards.</p>
+    <div class="row-actions" style="flex-wrap:wrap;gap:8px">
+      <button class="btn btn-outline fc-3d" data-action="load-demo" data-demo="positive">1. Demo: Presumptive Positive</button>
+      <button class="btn btn-outline fc-3d" data-action="load-demo" data-demo="negative">2. Demo: Presumptive Negative</button>
+      <button class="btn btn-outline fc-3d" data-action="load-demo" data-demo="inconclusive">3. Demo: Inconclusive Case</button>
+      <button class="btn btn-outline fc-3d" data-action="load-demo" data-demo="poorQuality">4. Demo: Quality Rejection</button>
+      <button class="btn btn-outline fc-3d" data-action="demo-tamper">5. Demo: Tamper Detection</button>
+    </div>
   </div>`;
 }

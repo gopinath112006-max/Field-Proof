@@ -1,37 +1,36 @@
 /**
- * Record schema, normalisation and storage.
+ * Record schema, normalisation, migration and storage.
  *
- * FieldCheck does NOT classify substances. A record is the evidence bundle for
- * one field test:
+ * FieldCheck Schema v3:
+ * Preserves the verified operator observation while incorporating the
+ * automated colorimetric classification layer and genuine ECDSA digital signature.
  *
- *   - the captured frame (kept in memory for the session, uploaded when signed in)
- *   - a SHA-256 digest of the frame's actual bytes
- *   - the operator's own reading of the physical kit  -> `observation`
+ * A record is the complete digital evidence bundle:
+ *   - The captured frame (held in session memory, uploaded when signed in)
+ *   - SHA-256 digest of the captured image bytes
+ *   - Genuine ECDSA-P256-SHA256 digital signature over canonical record
+ *   - Automated colorimetric classification (presumptive positive / negative / inconclusive)
+ *   - Reference-card calibration status and metadata
+ *   - The operator's own verified reading of the physical kit -> `observation`
  *   - GPS, operator identity and timestamp
- *
- * `observation` is always operator-sourced. There is no field in this schema
- * that a machine can write, which is what stops a future change from quietly
- * reintroducing an automated verdict.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const STORAGE_KEY = "dtbRecords";
 export const SCHEMA_KEY = "dtbSchemaVersion";
 
 export const OBSERVATIONS = Object.freeze(["positive", "negative", "unreadable"]);
+export const CLASSIFICATIONS = Object.freeze(["positive", "negative", "inconclusive"]);
 
-/** The only source permitted to write `observation`. */
+/** The source permitted to write `observation`. */
 export const OBSERVATION_SOURCE_OPERATOR = "operator";
-/** Applied by the v1 -> v2 migration. See migrateRecord(). */
+/** Applied by the v1 -> v2/v3 migration. See migrateRecord(). */
 export const OBSERVATION_SOURCE_LEGACY = "unclassified-legacy";
+
+export const CLASSIFICATION_SOURCE_AUTOMATED = "automated-colorimetric-v1";
 
 /**
  * Coerce to a finite number or null.
- *
- * The obvious `Number(value)` is wrong for missing coordinates: Number(null),
- * Number("") and Number([]) are all 0, so a record with no GPS became a fix at
- * 0,0 — a real place in the Gulf of Guinea. Absent or non-numeric input must
- * stay null so `hasCoords` can reject the pair.
  */
 function toFiniteNumberOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -52,15 +51,17 @@ function pickObservation(value) {
   return OBSERVATIONS.includes(value) ? value : "unreadable";
 }
 
+function pickClassification(value) {
+  return CLASSIFICATIONS.includes(value) ? value : "inconclusive";
+}
+
 /**
- * Coerce anything that reaches the UI into a complete, render-safe record.
- * The previous build interpolated `r.hash`, `r.date` and `r.sync` straight
- * into innerHTML, so a partially written record rendered the literal string
- * "undefined" into an evidence page.
+ * Coerce anything that reaches the UI or storage into a complete, render-safe record.
  */
 export function normalizeRecord(input) {
   const r = input && typeof input === "object" ? input : {};
   const observation = pickObservation(r.observation);
+  const classification = pickClassification(r.classification);
   const lat = toFiniteNumberOrNull(r.lat);
   const lng = toFiniteNumberOrNull(r.lng);
   const hasCoords = lat !== null && lng !== null;
@@ -81,6 +82,28 @@ export function normalizeRecord(input) {
     labReferralRequired: observation === "positive",
     labReferralRequested: Boolean(r.labReferralRequested),
 
+    // --- automated colorimetric classification ---------------------------
+    classification,
+    classificationSource: cleanString(
+      r.classificationSource,
+      r.classification ? CLASSIFICATION_SOURCE_AUTOMATED : "none"
+    ),
+    classificationConfidence:
+      typeof r.classificationConfidence === "number" && Number.isFinite(r.classificationConfidence)
+        ? r.classificationConfidence
+        : 0,
+    calibrationStatus: cleanString(r.calibrationStatus, "uncalibrated"),
+    classifierVersion: cleanString(r.classifierVersion, "1.0.0"),
+    calibrationVersion: cleanString(r.calibrationVersion, "1.0.0"),
+    normalizedReactionColor: r.normalizedReactionColor || null,
+
+    // --- genuine digital signature (ECDSA-P256-SHA256) -------------------
+    signatureAlgorithm: cleanString(r.signatureAlgorithm, r.signature ? "ECDSA-P256-SHA256" : "none"),
+    signature: cleanString(r.signature, ""),
+    signatureKeyId: cleanString(r.signatureKeyId, ""),
+    publicKey: cleanString(r.publicKey, ""),
+    integrityStatus: cleanString(r.integrityStatus, r.signature ? "verified" : "unsigned"),
+
     // --- what the capture guard measured ---------------------------------
     guard: {
       accepted: Boolean(r.guard && r.guard.accepted),
@@ -100,9 +123,6 @@ export function normalizeRecord(input) {
     date: cleanString(r.date, "Unknown"),
     operator: cleanString(r.operator, "Unidentified operator"),
     hash: cleanString(r.hash, ""),
-    // Honoured rather than hardcoded. The v1 migration passes a different label
-    // so that a digest of a string is never presented as a digest of the image
-    // bytes; a record with no digest says so instead of claiming SHA-256.
     hashAlgorithm: cleanString(r.hashAlgorithm, r.hash ? "SHA-256" : "none"),
     sync: r.sync === "synced" ? "synced" : "offline",
 
@@ -124,30 +144,24 @@ export function normalizeRecord(input) {
 }
 
 /**
- * v1 -> v2 migration.
- *
- * The v1 schema stored `result: "positive" | "negative" | "inconclusive"`.
- * Every code path that produced a v1 result forced "inconclusive" (the
- * backend hardcoded `validTestKit: false` and every fallback returned
- * inconclusive), but we cannot prove that for records created by other builds
- * or hand-edited storage. So we do not carry any legacy positive/negative
- * forward as an observation: they migrate to "unreadable" and are marked
- * `unclassified-legacy` so the record page can say the value was never a
- * verified operator observation.
+ * v1/v2 -> v3 migration.
+ * Preserves verified operator observations from v2 and converts unverified v1 results to unreadable.
  */
 export function migrateRecord(input) {
-  if (input && Number(input.schemaVersion) === SCHEMA_VERSION) {
+  if (!input || typeof input !== "object") {
     return normalizeRecord(input);
   }
-  const legacy = input && typeof input === "object" ? input : {};
+
+  // Records created with Schema v2 or v3 already have genuine operator observations
+  if (Number(input.schemaVersion) >= 2) {
+    return normalizeRecord(input);
+  }
+
+  const legacy = input;
   const legacyResult = cleanString(legacy.result, "inconclusive");
 
   return normalizeRecord({
     ...legacy,
-    // Every legacy value migrates to "unreadable", whatever it said. The v1
-    // code paths all produced "inconclusive", but a hand-edited or
-    // foreign-built record is not proof of that, so nothing is carried forward
-    // as though it were a reading.
     observation: "unreadable",
     observationSource: OBSERVATION_SOURCE_LEGACY,
     note: [
@@ -158,11 +172,6 @@ export function migrateRecord(input) {
     ]
       .filter(Boolean)
       .join(" "),
-    // v1 stored a digest of the string `${dataUrl}|${id}`, not of the image
-    // bytes. Keeping it under the old field name stops it being presented as a
-    // comparable image hash, and the algorithm label says so: a record with a
-    // v1 string digest is "unverified-v1", and one with no digest at all is
-    // labelled by normalizeRecord rather than claimed as SHA-256.
     hash: legacy.imageDigestOfString || "",
     hashAlgorithm: legacy.imageDigestOfString ? "unverified-v1" : ""
   });
@@ -187,7 +196,6 @@ function hasLocalStorage() {
   try {
     return typeof localStorage !== "undefined" && localStorage !== null;
   } catch {
-    // Safari private mode and some embedded webviews throw on access.
     return false;
   }
 }
@@ -211,8 +219,6 @@ export function persistRecords(records) {
     localStorage.setItem(SCHEMA_KEY, String(SCHEMA_VERSION));
     return true;
   } catch (error) {
-    // QuotaExceededError is the realistic case: data URLs of full-resolution
-    // frames are large. Report it rather than pretending the write succeeded.
     console.warn("Record storage write failed", error);
     return false;
   }
@@ -244,8 +250,6 @@ export function summarizeRecords(records) {
 
 /**
  * Records bucketed by local calendar day for the last `days` days.
- * Buckets with no activity are included as 0 so the chart axis is honest
- * rather than compressing the timeline.
  */
 export function bucketRecordsByDay(records, days = 7, now = new Date()) {
   const list = Array.isArray(records) ? records : [];

@@ -15,7 +15,7 @@
 
 import { jsPDF } from "jspdf";
 import { downloadBlob } from "./dom.js";
-import { formatGps, formatRecordDate, observationLabel } from "./format.js";
+import { formatGps, formatRecordDate, observationLabel, classificationLabel } from "./format.js";
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -145,29 +145,44 @@ export function buildMinimalPdf(lines, maxLines = 42) {
 }
 
 function reportLines(record) {
+  const isDemo = Boolean(
+    record.id?.includes("DEMO") ||
+    record.note?.includes("DEMO") ||
+    record.sampleType?.includes("demo") ||
+    record.isDemo
+  );
   const lines = [
     "FIELDCHECK - DIGITAL FIELD TEST RECORD",
+    ...(isDemo ? ["*** SYNTHETIC DEMO SAMPLE - NOT REAL FORENSIC EVIDENCE ***", ""] : [""]),
+    `Test ID:                    ${record.id}`,
+    `Operator observation:       ${observationLabel(record.observation)}`,
+    `Observed at:                ${formatRecordDate(record.observedAt || record.date)}`,
+    `Observed by:                ${record.observedBy || record.operator}`,
+    `Recorded at:                ${formatRecordDate(record.date)}`,
     "",
-    `Test ID:                ${record.id}`,
-    `Operator observation:   ${observationLabel(record.observation)}`,
-    `Observed at:            ${formatRecordDate(record.observedAt || record.date)}`,
-    `Observed by:            ${record.observedBy || record.operator}`,
-    `Recorded at:            ${formatRecordDate(record.date)}`,
+    "AUTOMATED CLASSIFICATION (PRESUMPTIVE)",
+    `Presumptive classification: ${classificationLabel(record.classification)}`,
+    `Algorithm confidence:       ${record.classificationConfidence ? `${record.classificationConfidence}%` : "not assessed"}`,
+    `Calibration status:         ${record.calibrationStatus || "uncalibrated"} (v${record.calibrationVersion || "1.0.0"})`,
+    `Classifier version:         v${record.classifierVersion || "1.0.0"}`,
+    "",
+    "CRYPTOGRAPHIC INTEGRITY",
+    `Image digest (SHA-256):     ${record.hash || "not recorded"} (${record.hashAlgorithm || "none"})`,
+    `Digital signature:          ${record.signature ? `${record.signatureAlgorithm || "ECDSA-P256-SHA256"} (${record.signatureKeyId || "key recorded"})` : "unsigned"}`,
     "",
     "CAPTURE",
-    `Image digest:           ${record.hash || "not recorded"} (${record.hashAlgorithm})`,
-    `Reference swatch match: ${record.guard.accepted ? record.guard.colorName : "no match"}`,
-    `  coverage / shape:     ${record.guard.accepted ? `${Math.round(record.guard.coverage * 100)}% coverage, ${record.guard.aspect}:1 bounding box` : record.guard.reason || "n/a"}`,
-    `Frame quality:          ${record.quality}`,
+    `Reference swatch match:     ${record.guard.accepted ? record.guard.colorName : "no match"}`,
+    `  coverage / shape:         ${record.guard.accepted ? `${Math.round(record.guard.coverage * 100)}% coverage, ${record.guard.aspect}:1 bounding box` : record.guard.reason || "n/a"}`,
+    `Frame quality:              ${record.quality}`,
     "",
     "LOCATION AND IDENTITY",
-    `GPS:                    ${formatGps(record.lat, record.lng, record.accuracy)}`,
-    `Operator:               ${record.operator}`,
+    `GPS:                        ${formatGps(record.lat, record.lng, record.accuracy)}`,
+    `Operator:                   ${record.operator}`,
     "",
     "FOLLOW-UP",
-    `Laboratory referral:    ${record.labReferralRequired ? "required by policy for a positive observation" : "not required"}`,
-    `  requested:            ${record.labReferralRequested ? "yes" : "no"}`,
-    `Cloud sync:             ${record.sync === "synced" ? "uploaded" : "on this device only"}`,
+    `Laboratory referral:        ${record.labReferralRequired ? "required by policy for a positive observation" : "not required"}`,
+    `  requested:                ${record.labReferralRequested ? "yes" : "no"}`,
+    `Cloud sync:                 ${record.sync === "synced" ? "uploaded" : "on this device only"}`,
     ""
   ];
   if (record.note) {
@@ -256,6 +271,19 @@ export async function exportRecordPdf(record, imageDataUrl) {
     `${record.id} · generated ${new Date().toLocaleString()}`
   );
 
+  const isDemo = Boolean(
+    record.id?.includes("DEMO") ||
+    record.note?.includes("DEMO") ||
+    record.sampleType?.includes("demo") ||
+    record.isDemo
+  );
+  if (isDemo) {
+    doc.setFont("helvetica", "bold").setFontSize(9).setTextColor(200, 30, 30);
+    doc.text("SYNTHETIC DEMO SAMPLE — NOT REAL FORENSIC EVIDENCE", MARGIN, y);
+    doc.setTextColor(0);
+    y += 6;
+  }
+
   y = drawKeyValues(
     doc,
     [
@@ -263,7 +291,12 @@ export async function exportRecordPdf(record, imageDataUrl) {
       ["Observed at", formatRecordDate(record.observedAt || record.date)],
       ["Observed by", record.observedBy || record.operator],
       ["Operator note", record.note || "—"],
+      ["Presumptive classification", classificationLabel(record.classification)],
+      ["Algorithm confidence", record.classificationConfidence ? `${record.classificationConfidence}%` : "not assessed"],
+      ["Calibration status", `${record.calibrationStatus || "uncalibrated"} (v${record.calibrationVersion || "1.0.0"})`],
+      ["Classifier version", `v${record.classifierVersion || "1.0.0"}`],
       ["Image digest (SHA-256)", record.hash || "not recorded"],
+      ["Digital signature", record.signature ? `${record.signatureAlgorithm || "ECDSA-P256"} (${record.signatureKeyId || "key"})` : "unsigned"],
       [
         "Reference swatch match",
         record.guard.accepted

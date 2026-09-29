@@ -1,7 +1,7 @@
-/** Presentation helpers: observation labels, dates and integrity wording. */
+/** Presentation helpers: observation labels, classification labels, dates and integrity wording. */
 
 import { escapeHtml } from "./dom.js";
-import { OBSERVATIONS } from "./records.js";
+import { OBSERVATIONS, CLASSIFICATIONS } from "./records.js";
 
 /**
  * Wording matters here. These are the operator's readings of a physical kit,
@@ -19,6 +19,16 @@ export const OBSERVATION_SHORT = Object.freeze({
   unreadable: "Not read"
 });
 
+/**
+ * Automated colorimetric classification terminology.
+ * Strictly presumptive — never claims chemical confirmation.
+ */
+export const CLASSIFICATION_LABELS = Object.freeze({
+  positive: "Presumptive positive",
+  negative: "Presumptive negative",
+  inconclusive: "Inconclusive"
+});
+
 export function observationLabel(value) {
   return OBSERVATION_LABELS[value] || OBSERVATION_LABELS.unreadable;
 }
@@ -26,6 +36,23 @@ export function observationLabel(value) {
 export function observationPill(value) {
   const key = OBSERVATIONS.includes(value) ? value : "unreadable";
   return `<span class="status-pill ${key}">${escapeHtml(observationLabel(key))}</span>`;
+}
+
+export function classificationLabel(value) {
+  return CLASSIFICATION_LABELS[value] || CLASSIFICATION_LABELS.inconclusive;
+}
+
+export function classificationPill(value) {
+  const key = CLASSIFICATIONS.includes(value) ? value : "inconclusive";
+  return `<span class="status-pill ${key}">${escapeHtml(classificationLabel(key))}</span>`;
+}
+
+export function signaturePill(status) {
+  const verified = status === "VERIFIED" || status === "verified";
+  const invalid = status === "SIGNATURE INVALID" || status === "invalid";
+  const cls = verified ? "synced" : invalid ? "unreadable" : "offline";
+  const label = verified ? "✓ SIGNED (ECDSA)" : invalid ? "⚠ SIGNATURE INVALID" : "UNSIGNED";
+  return `<span class="status-pill ${cls}">${escapeHtml(label)}</span>`;
 }
 
 export function syncPill(value) {

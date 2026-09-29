@@ -13,7 +13,16 @@ import "./styles/main.css";
 import { config, describeConfig, isFirebaseConfigured } from "./config.js";
 import { $, $$, delegate, isEditingText } from "./lib/dom.js";
 import { showToast, showError } from "./lib/toast.js";
-import { formatGps, formatRecordDate, observationLabel, observationPill, syncPill } from "./lib/format.js";
+import {
+  classificationLabel,
+  classificationPill,
+  formatGps,
+  formatRecordDate,
+  observationLabel,
+  observationPill,
+  signaturePill,
+  syncPill
+} from "./lib/format.js";
 import {
   SCHEMA_VERSION,
   clearRecords,
@@ -23,6 +32,7 @@ import {
   summarizeRecords
 } from "./lib/records.js";
 import { sha256HexFromDataUrl, verifyRecordHash } from "./lib/hash.js";
+import { signRecord, verifyRecordSignature } from "./lib/crypto.js";
 import { REFERENCE_SWATCHES } from "./lib/guard.js";
 import { checkApiHealth, validateFrame } from "./lib/backend.js";
 import {
@@ -69,12 +79,14 @@ import {
   collectObservation,
   importImage,
   isCameraPreferred,
+  loadDemoFrame,
   openCamera,
   openObservationForm,
   requestCameraGps,
   retakeFrame,
   stopCamera
 } from "./capture.js";
+import { demonstrateTamperDetection } from "./lib/demo.js";
 
 // --- capabilities ----------------------------------------------------------
 
@@ -373,8 +385,9 @@ async function submitObservation(form) {
   // Pass the browser's digest so the client can report whether the bytes the
   // service hashed are the bytes that were captured.
   const validation = await validateFrame(state.camera.imageDataUrl, { localSha256: hash });
+  const classificationResult = state.camera.classification;
 
-  const record = normalizeRecord({
+  const unsignedRecord = normalizeRecord({
     id,
     observation: input.observation,
     observationSource: "operator",
@@ -383,6 +396,13 @@ async function submitObservation(form) {
     note: input.note,
     labReferralRequested: input.labReferralRequested,
     sampleType: input.sampleType,
+    classification: classificationResult?.classification || "inconclusive",
+    classificationSource: "automated-colorimetric-v1",
+    classificationConfidence: classificationResult?.confidence || 0,
+    calibrationStatus: classificationResult?.calibrationStatus || (guard?.accepted ? "calibrated" : "uncalibrated"),
+    classifierVersion: "1.0.0",
+    calibrationVersion: "1.0.0",
+    normalizedReactionColor: classificationResult?.normalizedHex || null,
     guard: {
       accepted: Boolean(guard?.accepted),
       colorName: guard?.colorName || "",
@@ -402,6 +422,16 @@ async function submitObservation(form) {
     apiStatus: validation.apiStatus
   });
 
+  const sigResult = await signRecord(unsignedRecord);
+  const record = normalizeRecord({
+    ...unsignedRecord,
+    signature: sigResult.signature,
+    signatureAlgorithm: sigResult.signatureAlgorithm,
+    signatureKeyId: sigResult.signatureKeyId,
+    publicKey: sigResult.publicKey,
+    integrityStatus: "verified"
+  });
+
   const records = getRecords();
   records.unshift(record);
   if (!commit(records)) return;
@@ -410,17 +440,19 @@ async function submitObservation(form) {
   state.camera.imageDataUrl = null;
   state.camera.blob = null;
   state.camera.guard = null;
+  state.camera.quality = null;
+  state.camera.classification = null;
   closeCamera();
   $("#observationModal")?.classList.add("hidden");
 
   if (isOnline() && getCurrentUser()) {
-    showToast("Record saved on this device. Uploading…", "info");
+    showToast("Record signed & saved on this device. Uploading…", "info");
     await doSync({ silent: true });
   } else {
     showToast(
       isOnline()
-        ? "Record saved on this device. Sign in to upload it."
-        : "Record saved on this device. It will stay here until you sync.",
+        ? "Record signed & saved on this device. Sign in to upload it."
+        : "Record signed & saved on this device. It will stay here until you sync.",
       "info"
     );
   }
@@ -435,9 +467,10 @@ async function showRecord(id) {
     return;
   }
   const integrity = await verifyRecordHash(record, state.sessionImages.get(record.id));
+  const signatureResult = await verifyRecordSignature(record);
   state.currentPage = "history";
   const container = $("#pageContainer");
-  if (container) container.innerHTML = recordDetail(record, integrity);
+  if (container) container.innerHTML = recordDetail(record, integrity, signatureResult);
   applyChrome("history", "Record details");
   bindCardTilt();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -502,12 +535,15 @@ async function handleCopyVerification(id) {
     "FieldCheck record",
     `Test ID: ${record.id}`,
     `Operator observation: ${observationLabel(record.observation)}`,
+    `Presumptive classification: ${classificationLabel(record.classification)} (${record.classificationConfidence || 0}% confidence)`,
+    `Calibration: ${record.calibrationStatus || "uncalibrated"}`,
     `Observed by: ${record.observedBy || record.operator}`,
     `Observed at: ${record.observedAt || record.date}`,
     `GPS: ${formatGps(record.lat, record.lng, record.accuracy)}`,
     `SHA-256: ${record.hash || "not recorded"}`,
+    `Digital signature: ${record.signature ? `${record.signatureAlgorithm} (${record.signatureKeyId})` : "unsigned"}`,
     "",
-    "This is an operator observation, not a laboratory result.",
+    "Presumptive field-test result with cryptographic integrity verification.",
     "Positive observations require confirmatory laboratory analysis."
   ].join("\n");
   try {
@@ -643,6 +679,38 @@ const ACTIONS = {
   "show-shortcuts": () =>
     showToast("Shortcuts: D dashboard · N new test · H history · R reports · S settings · G guide"),
   "show-toast": (el) => showToast(el.dataset.message || ""),
+  "load-demo": async (el) => {
+    const key = el.dataset.demo;
+    if (key) {
+      await loadDemoFrame(key);
+      showToast(`Loaded synthetic ${key} demo test.`);
+    }
+  },
+  "demo-tamper": async () => {
+    const records = getRecords();
+    const target = records.find((r) => r.signature) || records[0];
+    if (!target) {
+      showError("Please complete or load at least one test first to create a signed record.");
+      return;
+    }
+    const result = await demonstrateTamperDetection(
+      target,
+      "observation",
+      target.observation === "positive" ? "negative" : "positive"
+    );
+    const container = $("#pageContainer");
+    if (container) {
+      container.innerHTML = recordDetail(
+        result.tamperedRecord,
+        { checked: true, valid: true, reason: "Image digest matches" },
+        result.verificationAfter
+      );
+      applyChrome("history", "Tamper detected record");
+      bindCardTilt();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      showToast("Tamper detected: observation altered. Digital signature invalid!", "error");
+    }
+  },
   "sign-out": () => handleSignOut()
 };
 

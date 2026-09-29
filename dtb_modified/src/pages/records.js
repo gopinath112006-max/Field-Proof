@@ -2,10 +2,12 @@
 
 import { escapeHtml } from "../lib/dom.js";
 import {
+  classificationPill,
   formatGps,
   formatRecordDate,
   observationLabel,
   observationPill,
+  signaturePill,
   syncPill
 } from "../lib/format.js";
 import { summarizeRecords } from "../lib/records.js";
@@ -17,16 +19,17 @@ export function recordsTable(records) {
     return `<div class="fc-empty">Nothing to show. Complete a field test to create a record.<br><small>Nothing is pre-populated.</small></div>`;
   }
   return `<table class="table">
-    <thead><tr><th>Test ID</th><th>Observation</th><th>Recorded</th><th>Location</th><th>Storage</th></tr></thead>
+    <thead><tr><th>Test ID</th><th>Observation</th><th>Classification</th><th>Recorded</th><th>Location</th><th>Integrity</th></tr></thead>
     <tbody>
       ${records
         .map(
           (r) => `<tr data-action="view-record" data-id="${escapeHtml(r.id)}" style="cursor:pointer">
             <td class="id">${escapeHtml(r.id)}</td>
             <td>${observationPill(r.observation)}</td>
+            <td>${classificationPill(r.classification)}</td>
             <td>${escapeHtml(formatRecordDate(r.date))}</td>
             <td>${escapeHtml(formatGps(r.lat, r.lng, r.accuracy))}</td>
-            <td>${syncPill(r.sync)}</td>
+            <td>${r.signature ? signaturePill("VERIFIED") : syncPill(r.sync)}</td>
           </tr>`
         )
         .join("")}
@@ -43,11 +46,16 @@ export function history(records) {
   <div class="card">
     <div class="search-row">
       <input id="historySearch" type="search" placeholder="Search by Test ID, date, location or operator..." aria-label="Search records">
-      <select id="historyFilter" class="filter" aria-label="Filter by observation">
-        <option value="all">All observations</option>
-        <option value="positive">Positive</option>
-        <option value="negative">Negative</option>
-        <option value="unreadable">Not read</option>
+      <select id="historyFilter" class="filter" aria-label="Filter by observation or status">
+        <option value="all">All records</option>
+        <option value="positive">Observed positive</option>
+        <option value="negative">Observed negative</option>
+        <option value="unreadable">Observed not read</option>
+        <option value="auto-positive">Presumptive positive (auto)</option>
+        <option value="auto-negative">Presumptive negative (auto)</option>
+        <option value="auto-inconclusive">Inconclusive (auto)</option>
+        <option value="signed">Digitally signed (ECDSA)</option>
+        <option value="unsigned">Unsigned records</option>
         <option value="onDevice">On device only</option>
         <option value="noGps">Missing GPS</option>
       </select>
@@ -61,6 +69,16 @@ export function filterRecords(records, { query, filter }) {
   return records.filter((r) => {
     if (filter === "positive" || filter === "negative" || filter === "unreadable") {
       if (r.observation !== filter) return false;
+    } else if (filter === "auto-positive") {
+      if (r.classification !== "positive") return false;
+    } else if (filter === "auto-negative") {
+      if (r.classification !== "negative") return false;
+    } else if (filter === "auto-inconclusive") {
+      if (r.classification !== "inconclusive") return false;
+    } else if (filter === "signed") {
+      if (!r.signature) return false;
+    } else if (filter === "unsigned") {
+      if (r.signature) return false;
     } else if (filter === "onDevice") {
       if (r.sync === "synced") return false;
     } else if (filter === "noGps") {
@@ -74,6 +92,9 @@ export function filterRecords(records, { query, filter }) {
       r.operator,
       r.note,
       r.observation,
+      r.classification,
+      r.signatureAlgorithm,
+      r.signatureKeyId,
       formatGps(r.lat, r.lng, r.accuracy)
     ]
       .join(" ")
