@@ -6,7 +6,7 @@
  * 2. Presumptive Negative synthetic frame (shows reference card + unreacted reagent)
  * 3. Inconclusive synthetic frame (shows ambiguous borderline reaction)
  * 4. Poor Quality synthetic frame (underexposed/blurred, rejected by quality gate)
- * 5. Tamper detection simulator (demonstrates cryptographic non-repudiation failure when data is altered)
+ * 5. Tamper detection simulator (demonstrates that altering a signed field makes ECDSA verification fail)
  *
  * SAFETY NOTICE:
  * All synthetic samples are explicitly labeled:

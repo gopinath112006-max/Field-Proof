@@ -232,42 +232,44 @@
           <button class="close" data-close="observationModal" type="button" aria-label="Close">×</button>
         </div>
 
-        <div id="observationSummary" class="observation-summary"></div>
-
         <form id="observationForm" class="observation-form">
-          <fieldset class="observation-options">
-            <legend>Your reading of the physical kit</legend>
-            <label class="observation-option">
-              <input type="radio" name="observation" id="obsPositive" value="positive" />
-              <span><strong>Observed positive</strong><small>The kit shows its positive appearance. A laboratory referral is required.</small></span>
-            </label>
-            <label class="observation-option">
-              <input type="radio" name="observation" value="negative" />
-              <span><strong>Observed negative</strong><small>The kit shows its negative appearance within the reading window.</small></span>
-            </label>
-            <label class="observation-option">
-              <input type="radio" name="observation" value="unreadable" checked />
-              <span><strong>Not read</strong><small>Expired, mistimed, poor light or a doubtful colour. Preferred over guessing.</small></span>
-            </label>
-          </fieldset>
+          <div class="observation-body">
+            <div id="observationSummary" class="observation-summary"></div>
 
-          <label class="field">
-            <span>Note <em>optional</em></span>
-            <textarea name="note" rows="2" maxlength="2000" placeholder="Kit type, lighting, anything unusual about the read."></textarea>
-          </label>
+            <fieldset class="observation-options">
+              <legend>Your reading of the physical kit</legend>
+              <label class="observation-option">
+                <input type="radio" name="observation" id="obsPositive" value="positive" />
+                <span><strong>Observed positive</strong><small>The kit shows its positive appearance. A laboratory referral is required.</small></span>
+              </label>
+              <label class="observation-option">
+                <input type="radio" name="observation" value="negative" />
+                <span><strong>Observed negative</strong><small>The kit shows its negative appearance within the reading window.</small></span>
+              </label>
+              <label class="observation-option">
+                <input type="radio" name="observation" value="unreadable" checked />
+                <span><strong>Not read</strong><small>Expired, mistimed, poor light or a doubtful colour. Preferred over guessing.</small></span>
+              </label>
+            </fieldset>
 
-          <label class="check-label-row">
-            <input type="checkbox" name="labReferral" />
-            <span>Send this sample for confirmatory laboratory analysis</span>
-          </label>
+            <label class="field">
+              <span>Note <em>optional</em></span>
+              <textarea name="note" rows="2" maxlength="2000" placeholder="Kit type, lighting, anything unusual about the read."></textarea>
+            </label>
 
-          <label class="check-label-row required">
-            <input type="checkbox" name="acknowledged" />
-            <span>
-              I read this from the physical kit myself. I understand this record is an operator
-              observation, not a laboratory result.
-            </span>
-          </label>
+            <label class="check-label-row">
+              <input type="checkbox" name="labReferral" />
+              <span>Send this sample for confirmatory laboratory analysis</span>
+            </label>
+
+            <label class="check-label-row required">
+              <input type="checkbox" name="acknowledged" />
+              <span>
+                I read this from the physical kit myself. I understand this record is an operator
+                observation, not a laboratory result.
+              </span>
+            </label>
+          </div>
 
           <div class="row-actions">
             <button class="btn btn-outline fc-3d" type="submit" name="intent" value="cancel" data-close="observationModal">Cancel</button>

@@ -150,16 +150,44 @@ async function uploadFrame(user, record, blob) {
 /**
  * Write one record to Firestore. Resolves only when the write is acknowledged,
  * which is what allows runSync() to mark a record synced truthfully.
+ *
+ * ORDERING IS LOAD-BEARING: Firestore first, then Storage, then finalise.
+ *
+ * storage.rules permits a frame only where the matching Firestore record
+ * already exists:
+ *
+ *   exists(/databases/(default)/documents/testRecords/$(recordId))
+ *   && firestore.get(...).data.userId == request.auth.uid
+ *
+ * Uploading the frame first is therefore denied on a first sync, because the
+ * document does not exist yet. tests/storage.rules.test.mjs pins both halves of
+ * that contract, so the two cannot drift apart again.
  */
 export async function writeRecord(record, { user, imageBlob }) {
   if (!db) throw new Error("Firestore is not initialised");
   if (!user) throw new Error("no authenticated user");
 
-  // The frame is the evidence. If there is a frame to upload and it fails, the
-  // record is NOT written as synced: runSync() leaves the record pending and
-  // reports the failure, so the operator is never told their evidence reached
-  // the cloud when only metadata did. v1 swallowed this failure, wrote the
-  // metadata, and stamped the record "synced" with no image.
+  // 1. Metadata first. It carries no image yet and is explicitly marked
+  //    frameUploaded: false, so an interrupted sync leaves an honest record
+  //    rather than one that claims a frame the cloud never received.
+  await setDoc(
+    doc(collection(db, "testRecords"), record.id),
+    {
+      ...record,
+      imageUrl: null,
+      frameUploaded: false,
+      userId: user.uid,
+      syncedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  // 2. The frame is the evidence. If there is a frame to upload and it fails,
+  //    the record is NOT reported as synced: the throw propagates to runSync(),
+  //    which leaves the record pending and surfaces the failure, so the operator
+  //    is never told their evidence reached the cloud when only metadata did.
+  //    v1 swallowed this failure, wrote the metadata, and stamped the record
+  //    "synced" with no image.
   let imageUrl = null;
   if (imageBlob) {
     try {
@@ -169,19 +197,18 @@ export async function writeRecord(record, { user, imageBlob }) {
     }
   }
 
+  // 3. Finalise with the real URL. Only now, with both the metadata and the
+  //    frame stored, is frameUploaded true.
   await setDoc(
     doc(collection(db, "testRecords"), record.id),
     {
-      ...record,
       imageUrl,
       frameUploaded: Boolean(imageUrl),
-      userId: user.uid,
       syncedAt: serverTimestamp()
     },
     { merge: true }
   );
 
-  // Only now, with both the metadata and the frame stored, is it true.
   record.imageUrl = imageUrl;
   record.frameUploaded = Boolean(imageUrl);
 }

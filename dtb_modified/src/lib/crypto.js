@@ -5,7 +5,7 @@
  * - Algorithm: ECDSA using NIST P-256 curve (secp256r1) with SHA-256
  * - Deterministic canonical JSON serialization of immutable evidence fields
  * - Operator asymmetric key-pair generation and storage
- * - Non-repudiation signature verification & tamper detection
+ * - Signature verification & cryptographic tamper detection
  *
  * NOTE ON TERMINOLOGY & IDENTITY SCOPE:
  * SHA-256 is an image content digest (hash).

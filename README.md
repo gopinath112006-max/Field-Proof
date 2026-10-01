@@ -25,6 +25,7 @@
 
 1. [The Problem](#1-the-problem)
 2. [The FieldProof Solution](#2-the-fieldproof-solution)
+    - [Demo Mode & Synthetic Scenarios](#demo-mode--synthetic-scenarios)
 3. [End-to-End Operational Workflow](#3-end-to-end-operational-workflow)
 4. [System Architecture](#4-system-architecture)
 5. [Complete Module Map](#5-complete-module-map)
@@ -33,25 +34,27 @@
    - [In-Frame Reference Card Calibration](#62-in-frame-reference-card-calibration)
    - [Deterministic Colorimetric Classification](#63-deterministic-colorimetric-classification)
    - [Inconclusive Safety Guard & Intrusion Detection](#64-inconclusive-safety-guard--intrusion-detection)
-7. [Cryptographic Integrity & Chain of Custody](#7-cryptographic-integrity--chain-of-custody)
+7. [Cryptographic Integrity & Tamper Evidence](#7-cryptographic-integrity--tamper-evidence)
    - [Dual SHA-256 Image Digests](#71-dual-sha-256-image-digests)
    - [ECDSA P-256 Canonical Signatures](#72-ecdsa-p-256-canonical-signatures)
    - [Live Tamper Detection](#73-live-tamper-detection)
    - [What Cryptographic Proofs Establish](#74-what-cryptographic-proofs-establish)
 8. [Offline-First Operation & Persistence](#8-offline-first-operation--persistence)
 9. [Optional Validation Service (FastAPI)](#9-optional-validation-service-fastapi)
-10. [Developer Guide & Getting Started](#10-developer-guide--getting-started)
+10. [Local Development & Developer Guide](#10-local-development--developer-guide)
     - [Prerequisites & Installation](#101-prerequisites--installation)
     - [Runtime Configuration](#102-runtime-configuration)
     - [API Base URL Resolution](#103-api-base-url-resolution)
     - [Handset Testing Protocol](#104-handset-testing-protocol)
     - [Available Scripts](#105-available-scripts)
+    - [Environment Variables](#106-environment-variables)
 11. [Testing, Quality Assurance & Verification Matrix](#11-testing-quality-assurance--verification-matrix)
-12. [Cloud Deployment & Security Rules](#12-cloud-deployment--security-rules)
+12. [Production Deployment & Security Rules](#12-production-deployment--security-rules)
 13. [Limitations & Boundary Analysis](#13-limitations--boundary-analysis)
 14. [Future Validation Roadmap](#14-future-validation-roadmap)
 15. [Repository Directory Structure](#15-repository-directory-structure)
-16. [Responsible Use & License](#16-responsible-use--license)
+16. [Safety Boundary](#16-safety-boundary)
+17. [Responsible Use & License](#17-responsible-use--license)
 
 ---
 
@@ -78,7 +81,25 @@ FieldProof converts a presumptive spot test into a **self-contained, tamper-evid
 - **Independent Operator Record:** The operator's own physical reading (`positive`, `negative`, `unreadable`) is recorded under an explicit acknowledgement and stored in a separate, immutable field that machine automation can never overwrite.
 - **Asymmetric Digital Signature:** A canonical JSON payload is signed using **ECDSA P-256 (secp256r1) with SHA-256**, binding image digest, GPS, timestamp, calibration metrics, and operator observations.
 - **100% Offline Capability:** Operates fully without cellular or Wi-Fi network connectivity. Records are indexed locally in `localStorage` (Schema v3) and can generate structured PDF referral reports on-device.
-- **Transparent Authenticity:** Any modification to record contents or image data causes immediate digital signature invalidation. Denied permissions (such as GPS) are recorded honestly as `"permission denied"` rather than fabricating placeholder data (`0,0`).
+- **Transparent Authenticity:** Any modification to signed record content or image data causes immediate ECDSA verification failure. Denied permissions (such as GPS) are recorded honestly as `"permission denied"` rather than fabricating placeholder data (`0,0`).
+
+### Demo Mode & Synthetic Scenarios
+
+**Every demo scenario in FieldProof is synthetic.** The images produced by Demo Mode are procedurally generated SVG test cards created by `src/lib/demo.js` — they are not photographs of a real test kit, and they are not evidence of anything.
+
+Each synthetic frame is watermarked in three places so it cannot be mistaken for a real capture:
+
+| Scenario | What it exercises | Expected result |
+| :--- | :--- | :--- |
+| **Demo Positive** | A strong, clean reference card and an unambiguous reagent reaction | Presumptive Positive, high algorithm confidence |
+| **Demo Negative** | A clean reference card with an unreacted reagent blank | Presumptive Negative |
+| **Demo Inconclusive** | An ambiguous borderline reaction close to the decision boundary | Inconclusive (ambiguity-margin rejection) |
+| **Demo Poor Quality** | A deliberately underexposed, blurred frame | Quality gate fails; any classification is demoted to Inconclusive |
+| **Tamper Simulation** | A locally mutated signed field | `SIGNATURE INVALID` |
+
+Watermark text appears on the frame itself (`SYNTHETIC SAMPLE: ...`, `DEMO ONLY — NOT REAL EVIDENCE`), on the exported PDF (`*** SYNTHETIC DEMO SAMPLE - NOT REAL FORENSIC EVIDENCE ***`), and in the record list. Demo Mode uploads nothing to any cloud project.
+
+Use Demo Mode to demonstrate the *pipeline* (quality gate, calibration, ΔE76 classification, ECDSA signing, tamper detection, PDF export) on any device without a physical test kit, a reference card, or lighting control.
 
 ---
 
@@ -277,7 +298,7 @@ FieldProof implements **Card Intrusion Protection**: if the reaction ROI color h
 
 ---
 
-## 7. Cryptographic Integrity & Chain of Custody
+## 7. Cryptographic Integrity & Tamper Evidence
 
 ### 7.1. Dual SHA-256 Image Digests
 
@@ -287,7 +308,7 @@ FieldProof implements **Card Intrusion Protection**: if the reaction ROI color h
 
 ### 7.2. ECDSA P-256 Canonical Signatures
 
-To ensure non-repudiation and prevent post-capture tampering, each test record is digitally signed using **ECDSA P-256 with SHA-256**:
+To detect post-capture tampering, each test record is digitally signed using **ECDSA P-256 with SHA-256**:
 
 1. **Key Generation:** A cryptographic key pair is generated on-device via Web Crypto (`subtle.generateKey`). Keys are non-extractable from hardware storage where supported.
 2. **Canonical Serialization:** To ensure signature reproducibility across different JSON encoders, a canonical payload of exactly 14 allow-listed fields is assembled with alphabetically sorted keys:
@@ -394,7 +415,7 @@ Pillow (`PIL.Image`) is used strictly for format verification and dimension extr
 
 ---
 
-## 10. Developer Guide & Getting Started
+## 10. Local Development & Developer Guide
 
 ### 10.1. Prerequisites & Installation
 
@@ -473,6 +494,21 @@ To run backend tests:
 python -m pytest backend -q
 ```
 
+### 10.6 Environment Variables
+
+FieldProof has exactly **two** environment variables across the entire project. **Neither is a secret, and neither has a safe default that must be changed to deploy.** Variable *names* only — values are never committed.
+
+| Variable Name | Read by | Purpose | Leave unset for production? |
+| :--- | :--- | :--- | :--- |
+| `VITE_DTB_API_URL` | `src/config.js` (build time, Vite) | API base URL override. Unset ⇒ the app calls its own origin. | **Yes — leave unset.** |
+| `DTB_ALLOWED_ORIGINS` | `backend/main.py` (server start) | Comma-separated CORS origins. Unset ⇒ cross-origin browser access is fully closed. | **Yes — leave unset.** |
+
+Copy `.env.example` to `.env` only if you need to override either. Both `.env` and `.env.local` are gitignored.
+
+**Public configuration (safe to ship to a browser):** the Firebase *web* config in `public/config.js` — `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`, `measurementId`. These are public identifiers by design. Access is enforced by `firestore.rules` and `storage.rules`, never by hiding the file.
+
+**Secrets (must never be committed or exposed):** there are none in this repository. No service-account JSON, no private keys, no admin SDK credentials. The app has no server-side Firebase Admin code at all — all cloud access is direct client SDK, constrained entirely by security rules. **Never** place a service-role key, admin credential, private key, or any other server secret in `public/config.js`; it is downloaded by every visitor in full.
+
 ---
 
 ## 11. Testing, Quality Assurance & Verification Matrix
@@ -511,28 +547,99 @@ npm run build
 
 ---
 
-## 12. Cloud Deployment & Security Rules
+## 12. Production Deployment & Security Rules
 
-FieldProof uses Firebase for optional cloud synchronization and backup. Security is enforced through strict, owner-scoped, deny-by-default rules:
+### 12.1 Hosting Target: Firebase Hosting
+
+`firebase.json` at the repository root is already the deployment configuration: Hosting serves `dtb_modified/dist`, and the same file declares the Firestore and Storage rule paths. Use it. No alternative platform configuration exists or is needed.
+
+Deploying Firebase is **optional**. With no project configured, FieldProof runs entirely on `localStorage` — camera, quality gate, calibration, classification, SHA-256, ECDSA signing, tamper detection and PDF export all work, and cloud sync is simply disabled. Cloud sync adds owner-isolated backup, nothing more.
+
+### 12.2 Step 0 — Verify Before You Deploy
 
 ```bash
-# Build production assets and deploy hosting + rules
+cd dtb_modified
+npm run verify                      # lint + CSS audit + 147 frontend tests
+python -m pytest backend -q         # 13 backend tests
+npm run build                       # production bundle into dist/
+```
+
+Expected: **160/160 tests, 0 failures, build succeeds.**
+
+### 12.3 Step 1 — Authenticate and Select a Project
+
+```bash
+firebase login
+firebase use --add                 # registers the project id and writes .firebaserc
+```
+
+`.firebaserc` is gitignored by convention and is not committed. Never share credentials.
+
+### 12.4 Step 2 — Create the Runtime Config
+
+`public/config.js` is gitignored and ships as a placeholder. Copy the template and fill in your Firebase **web** config:
+
+```bash
+cp public/config.template.js public/config.js
+```
+
+Replace every `YOUR_*` value with your own project's web config from *Firebase Console → Project Settings → Your apps → SDK setup and configuration*.
+
+Leave `api.baseUrl` as the `YOUR_API_BASE_URL` placeholder. A placeholder is treated as unset, so the app falls back to same-origin and the optional FastAPI validator is reported as not configured rather than being called and failing.
+
+### 12.5 Step 3 — Rebuild
+
+```bash
 npm run build
+```
+
+`public/config.js` is copied verbatim into `dist/` by Vite. **Editing `dist/config.js` directly also works** — Firebase serves it with `Cache-Control: no-cache`, so an operator can change it on a deployed host without a rebuild.
+
+### 12.6 Step 4 — Deploy Hosting and Rules
+
+```bash
 firebase deploy --only hosting,firestore:rules,storage
 ```
 
-### Firestore Security Policy (`firestore.rules`)
+> [!IMPORTANT]
+> **Always pass `--only hosting,firestore:rules,storage`.** A bare `firebase deploy` also deploys the `functions` codebase declared in `firebase.json`. That codebase (`dtb_modified/backend`) is a plain FastAPI application with **no Cloud Functions entry point**, so it cannot produce a callable function, and the `/api/**` → `function: api` rewrite would have no target. The rewrite is harmless while `api.baseUrl` is a placeholder, but do not deploy the functions codebase.
 
-- **Deny by Default:** All collections without explicit rules are locked.
-- **Owner Isolation:** Operators can only read and query records where `request.auth.uid == resource.data.userId`.
-- **Validation on Write:** Creation or update requires matching `request.auth.uid == request.resource.data.userId`, validated Schema v3 fields, and valid timestamps.
-- **Zero Cross-Operator Visibility:** No operator can view, enumerate, or export records belonging to another operator.
+### 12.7 Step 5 — Manual Firebase Console Actions
 
-### Cloud Storage Security Policy (`storage.rules`)
+These cannot be done from the repository. `REQUIRES MANUAL FIREBASE CONSOLE VERIFICATION`:
+
+1. **Authentication → Sign-in method:** enable **Email/Password**. Enable **Google** only if you want the Google button; leave it off to present a single sign-in path.
+2. **Authentication → Settings → Authorized domains:** add your Hosting domain (e.g. `your-project.web.app`) and any custom domain. Without this, sign-in fails with `auth/unauthorized-domain`.
+3. **Firestore Database:** create the database **in production mode**. *Test mode rules are world-writable* — every record would be readable by anyone who guesses the project id. Do not create it in test mode, even briefly.
+4. **Storage:** enable Storage. The rules require the default bucket to match the `storageBucket` value in `public/config.js`.
+5. **Deploy rules before any real record is uploaded.** Rules are not enforced by the client SDK; until they are deployed, a test-mode database stays open.
+
+### 12.8 Firestore Security Policy (`firestore.rules`)
+
+- **Deny by Default:** All collections without explicit rules are locked, via a catch-all `match /{document=**} { allow read, write: if false; }`. A collection added later without a rule is closed, not open.
+- **Owner Isolation:** Operators can only read records where `request.auth.uid == resource.data.userId`.
+- **Validation on Write:** Create and update require `request.resource.data.userId == request.auth.uid`, a string `id` of at most 64 characters, and `observation` in `['positive','negative','unreadable']`.
+- **Deterministic Record IDs:** The document id is the operator-generated `record.id`, so a re-sync updates the same document instead of creating a duplicate.
+- **Zero Cross-Operator Visibility:** No operator can view, enumerate, or export another operator's records. There is no list-all or export path.
+
+### 12.9 Cloud Storage Security Policy (`storage.rules`)
 
 - Images are stored at `dtb/{uid}/{recordId}.jpg`.
-- Read and write access is restricted strictly to `request.auth.uid == uid`.
-- Image writes require that an associated Firestore metadata document already exists and is owned by the same user.
+- Read and write access require `request.auth.uid == uid`.
+- File size is capped at **10 MB** and content type must match `image/*`.
+- A write additionally requires that the matching Firestore document **already exists** and is owned by the same user. `writeRecord()` in `src/lib/firebase.js` therefore writes metadata to Firestore *before* uploading the frame; `tests/storage.rules.test.mjs` pins both halves of that ordering so they cannot drift apart.
+
+### 12.10 Verifying the Rules Before and After Deploying
+
+The 31 security-rules assertions live in `tests/*.rules.test.mjs` and are **not** part of `npm test` — `vite.config.js` includes only `*.test.js`, so they are excluded from the 160-test total. Run them against the local emulators, never against the live project:
+
+```bash
+# from the repository root
+firebase emulators:exec --only firestore "node dtb_modified/tests/firestore.rules.test.mjs"
+firebase emulators:exec --only firestore,storage "node dtb_modified/tests/storage.rules.test.mjs"
+```
+
+Requires a JDK (Java 17+). Both suites use a throwaway project id, `fieldcheck-rules-test`, and assert that anonymous and cross-user access is denied.
 
 ---
 
@@ -550,9 +657,14 @@ FieldProof maintains an honest, scientifically grounded boundary regarding what 
 
 ### Known Technical Constraints
 
-- **Single Reference Card Swatch:** Calibration derives a global diagonal von Kries gain based on a single reference swatch. It cannot correct for non-uniform lighting gradients across large test pouches.
-- **Browser-Held Signing Keys:** ECDSA private keys are stored within the browser's local profile (`localStorage`). In this prototype, possession of the key demonstrates device continuity, not verified institutional officer identity.
+- **Prototype Engineering Thresholds:** The `NOMINAL_PRESET_V1` color profiles and all ΔE76 cut-offs are engineering presets, not empirically derived values.
+- **No Physical Laboratory Validation Yet:** No result produced by this software has been validated against physical test kits or spectrophotometric ground truth.
+- **Fixed Central ROI:** The reaction region is the central 30% × 30% of the frame. The classifier cannot locate a pouch anywhere else in the image.
+- **Single-Swatch Calibration:** Calibration derives a global diagonal von Kries gain from a single reference swatch. It cannot correct for non-uniform lighting gradients across large test pouches.
+- **Approximately Uniform Illumination Assumption:** Correct colour is inferred from a single global gain, which assumes illumination is roughly even across the test pouch and the reference card. Glare, hard shadows and coloured ambient light violate this assumption.
+- **Local Browser Signing Key:** ECDSA private keys are generated in the browser and stored in `localStorage`. **Possession of the key demonstrates device continuity, not official organizational identity.** No institutional PKI, no certified identity, no legal non-repudiation.
 - **No Direct Background Sync:** Because FieldProof operates as a client-side SPA without service worker registration, data sync occurs only when the operator opens the application with an active internet connection.
+- **No Service Worker:** There is no offline app shell and no `manifest.json`. The page must be loaded from the network once per session; only *records* persist offline, in `localStorage`.
 
 ---
 
@@ -622,7 +734,29 @@ Field-Proof/
 
 ---
 
-## 16. Responsible Use & License
+## 16. Safety Boundary
+
+> FieldProof provides presumptive field-test classification and digital record integrity. It does not replace laboratory confirmation or determine legal conclusions.
+
+Concretely, and without qualification:
+
+| FieldProof does | FieldProof does **not** |
+| :--- | :--- |
+| Return a **presumptive positive**, **presumptive negative**, or **inconclusive** from deterministic colorimetric analysis | **Identify a substance.** There is no substance reference database, no spectroscopy, and no mass spectrometry. |
+| Report an **algorithm confidence** figure, clamped to 15%–95% | Report a probability of guilt, purity, quantity, or composition |
+| Produce a **SHA-256 content fingerprint** of the exact captured image bytes | Prove the photographed pouch contained an authentic narcotic |
+| Produce an **ECDSA P-256 digital signature** that permits **cryptographic tamper detection** of signed canonical fields | Establish **official organizational identity**, legal non-repudiation, or admissibility |
+| Record the operator's own physical reading separately and immutably | Override, correct, or auto-fill the operator's observation |
+| Store **GPS metadata honestly**, including `"permission denied"` when unavailable | Fabricate coordinates; a missing fix is never stored as `0,0` |
+| Generate a structured PDF **referral** document | Replace a laboratory report, a warrant, or a legal chain-of-custody protocol |
+
+**Every presumptive positive requires confirmatory laboratory analysis (e.g. GC-MS or HPLC) before it is relied upon for any purpose.** Presumptive colorimetric field tests are subject to known cross-reactions with common cutting agents and other household substances, which is precisely why they are presumptive.
+
+This software must **never** be used as the sole basis to arrest, detain, charge, or penalize any individual.
+
+---
+
+## 17. Responsible Use & License
 
 This prototype is provided strictly for academic research, technological evaluation, and evidence-handling demonstration under Hackathon Problem Statement 26231. 
 

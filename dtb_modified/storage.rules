@@ -1,19 +1,5 @@
 rules_version = '2';
 
-/**
- * FieldCheck Storage rules — deny by default.
- *
- * Frames are written under `dtb/<uid>/<recordId>.jpg`. The path is checked
- * against the signed-in uid as well as against the Firestore record, so a user
- * cannot write into another operator's folder even by guessing a uid.
- *
- * Size and type are enforced. The app downsamples frames to JPEG before upload;
- * a 10 MB ceiling leaves generous headroom and still bounds storage abuse.
- *
- * Deploy with:
- *   firebase deploy --only storage
- */
-
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -26,15 +12,13 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
-    match /dtb/{uid}/{recordId}.jpg {
-      // Readable only by the owner of the frame.
+    match /dtb/{uid}/{recordId} {
       allow read: if isSignedIn() && request.auth.uid == uid;
 
-      // Writable only by the owner, and only where a record of theirs exists.
       allow write: if isSignedIn()
                    && request.auth.uid == uid
                    && isJpegUnder10Mb()
-                   && exists(/databases/(default)/documents/testRecords/$(recordId))
+                   && firestore.exists(/databases/(default)/documents/testRecords/$(recordId))
                    && firestore.get(/databases/(default)/documents/testRecords/$(recordId)).data.userId == request.auth.uid;
     }
 
