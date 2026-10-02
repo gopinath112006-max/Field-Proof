@@ -214,16 +214,16 @@ function stamp() {
 
 function drawHeader(doc, title, subtitle) {
   doc.setFont("helvetica", "bold").setFontSize(17);
-  doc.text("FIELDCHECK", MARGIN, 20);
+  doc.text("FIELDCHECK", MARGIN, 40);
   doc.setFontSize(10).setFont("helvetica", "normal");
-  doc.text("Capture, verify and record field-test evidence", MARGIN, 26);
+  doc.text("Capture, verify and record field-test evidence", MARGIN, 54);
   doc.setFont("helvetica", "bold").setFontSize(13);
-  doc.text(title, MARGIN, 36);
+  doc.text(title, MARGIN, 76);
   doc.setFont("helvetica", "normal").setFontSize(9);
-  doc.text(subtitle, MARGIN, 42);
+  doc.text(subtitle, MARGIN, 90);
   doc.setDrawColor(170);
-  doc.line(MARGIN, 47, PAGE_W - MARGIN, 47);
-  return 56;
+  doc.line(MARGIN, 98, PAGE_W - MARGIN, 98);
+  return 116;
 }
 
 function drawFooter(doc) {
@@ -231,25 +231,27 @@ function drawFooter(doc) {
   doc.text(
     "Operator observation, not a laboratory result. Laboratory confirmation required before reliance.",
     MARGIN,
-    PAGE_H - 14
+    PAGE_H - 24
   );
-  doc.text(`Generated ${new Date().toLocaleString()}`, MARGIN, PAGE_H - 9);
+  doc.text(`Generated ${new Date().toLocaleString()}`, MARGIN, PAGE_H - 12);
   doc.setTextColor(0);
 }
 
 function drawKeyValues(doc, rows, startY) {
   let y = startY;
   for (const [label, value] of rows) {
-    if (y > PAGE_H - 40) {
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(String(value ?? "—"), 330);
+    const rowHeight = Math.max(12, lines.length * 12 + 4);
+    if (y + rowHeight > PAGE_H - 40) {
       doc.addPage();
-      y = 24;
+      y = MARGIN;
     }
     doc.setFont("helvetica", "bold").setFontSize(9);
     doc.text(label, MARGIN, y);
     doc.setFont("helvetica", "normal");
-    const lines = doc.splitTextToSize(String(value ?? "—"), 300);
     doc.text(lines, MARGIN + 150, y);
-    y += Math.max(12, lines.length * 5 + 4);
+    y += rowHeight;
   }
   return y;
 }
@@ -264,7 +266,7 @@ export async function exportRecordPdf(record, imageDataUrl) {
     return { ok: true, engine: "fallback" };
   }
 
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
   let y = drawHeader(
     doc,
     "Digital field test record",
@@ -281,7 +283,7 @@ export async function exportRecordPdf(record, imageDataUrl) {
     doc.setFont("helvetica", "bold").setFontSize(9).setTextColor(200, 30, 30);
     doc.text("SYNTHETIC DEMO SAMPLE — NOT REAL FORENSIC EVIDENCE", MARGIN, y);
     doc.setTextColor(0);
-    y += 6;
+    y += 16;
   }
 
   y = drawKeyValues(
@@ -313,44 +315,50 @@ export async function exportRecordPdf(record, imageDataUrl) {
   );
 
   if (imageDataUrl) {
-    if (y > 200) {
-      doc.addPage();
-      y = 24;
-    }
-    y += 4;
-    doc.setFont("helvetica", "bold").setFontSize(11);
-    doc.text("Captured frame", MARGIN, y);
-    y += 5;
+    const maxW = 400;
+    const maxH = 250;
     try {
       const props = doc.getImageProperties(imageDataUrl);
-      const maxW = 170;
-      const maxH = 90;
       const scale = Math.min(maxW / props.width, maxH / props.height);
       const w = props.width * scale;
       const h = props.height * scale;
-      if (y + h > PAGE_H - 30) {
+      
+      if (y + h + 40 > PAGE_H - 40) {
         doc.addPage();
-        y = 24;
+        y = MARGIN;
       }
+      doc.setFont("helvetica", "bold").setFontSize(11);
+      doc.text("Captured frame", MARGIN, y);
+      y += 16;
       doc.addImage(imageDataUrl, "JPEG", MARGIN, y, w, h);
-      y += h + 6;
+      y += h + 24;
     } catch (error) {
+      if (y + 40 > PAGE_H - 40) {
+        doc.addPage();
+        y = MARGIN;
+      }
+      doc.setFont("helvetica", "bold").setFontSize(11);
+      doc.text("Captured frame", MARGIN, y);
+      y += 16;
       doc.setFont("helvetica", "normal").setFontSize(9);
       doc.text("(image could not be embedded)", MARGIN, y);
-      y += 6;
+      y += 24;
     }
   }
 
-  if (y > PAGE_H - 70) {
+  const disclaimerLines = doc.splitTextToSize(DISCLAIMER, PAGE_W - (MARGIN * 2));
+  const disclaimerHeight = disclaimerLines.length * 12;
+  
+  if (y + disclaimerHeight + 20 > PAGE_H - 40) {
     doc.addPage();
-    y = 24;
+    y = MARGIN;
   }
-  y += 4;
   doc.setFont("helvetica", "bold").setFontSize(11);
   doc.text("Important", MARGIN, y);
-  y += 6;
+  y += 14;
   doc.setFont("helvetica", "normal").setFontSize(9);
-  doc.text(doc.splitTextToSize(DISCLAIMER, 483), MARGIN, y);
+  doc.text(disclaimerLines, MARGIN, y);
+  y += disclaimerHeight + 16;
 
   drawFooter(doc);
   doc.save(filename);
@@ -377,26 +385,30 @@ export async function exportAllRecordsPdf(records) {
     return { ok: true, engine: "fallback" };
   }
 
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
   let y = drawHeader(doc, "Record index", `${records.length} record(s)`);
   doc.setFontSize(9);
 
   records.forEach((record, i) => {
-    if (y > PAGE_H - 30) {
+    const detail = `${observationLabel(record.observation)} · ${formatRecordDate(record.date)} · ${formatGps(record.lat, record.lng, record.accuracy)}`;
+    const detailLines = doc.splitTextToSize(detail, PAGE_W - MARGIN - 62);
+    const detailHeight = detailLines.length * 11;
+    const rowHeight = 16 + detailHeight + 12;
+
+    if (y + rowHeight > PAGE_H - 40) {
       doc.addPage();
-      y = 24;
+      y = MARGIN;
     }
     doc.setFont("helvetica", "bold").setFontSize(9);
     doc.text(`${i + 1}. ${record.id}`, MARGIN, y);
-    y += 5;
+    y += 12;
     doc.setFont("helvetica", "normal").setFontSize(8.5);
-    const detail = `${observationLabel(record.observation)} · ${formatRecordDate(record.date)} · ${formatGps(record.lat, record.lng, record.accuracy)}`;
-    doc.text(doc.splitTextToSize(detail, 460), MARGIN + 6, y);
-    y += doc.splitTextToSize(detail, 460).length * 4.5 + 3;
+    doc.text(detailLines, MARGIN + 6, y);
+    y += detailHeight;
     doc.setTextColor(120);
     doc.text(`SHA-256 ${record.hash || "not recorded"}`, MARGIN + 6, y);
     doc.setTextColor(0);
-    y += 9;
+    y += 16;
   });
 
   drawFooter(doc);
