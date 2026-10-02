@@ -990,3 +990,93 @@ html{scroll-behavior:smooth}
   .fc-bar-col>span{font-size:8px}
 }
 
+
+/* ===== LANDSCAPE PHONE OVERRIDE ===== */
+@media (max-height: 600px) and (orientation: landscape) {
+  /* Restore the left sidebar to a stable compact width */
+  .sidebar {
+    display: flex !important;
+    position: sticky !important;
+    top: 0 !important;
+    bottom: auto !important;
+    left: 0 !important;
+    height: 100vh !important;
+    width: 200px !important;
+    flex: 0 0 200px !important;
+    padding: 16px 12px !important;
+    flex-direction: column !important;
+    border-right: 1px solid rgba(0,168,255,.28) !important;
+    border-top: 0 !important;
+    background: rgba(3,13,27,.96) !important;
+  }
+  /* Ensure logo and connection widgets are visible */
+  .sidebar-brand,
+  .sidebar-brand > div:not(.brand-mark),
+  .connection-card,
+  .connection-card div,
+  .sidebar-bottom {
+    display: flex !important;
+  }
+  /* Ensure all nav items are visible and formatted correctly */
+  .sidebar nav,
+  .sidebar-nav-scroll {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    height: 100% !important;
+    max-height: none !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+  }
+  .sidebar nav .nav-item,
+  .sidebar-bottom .nav-item,
+  #logoutBtn {
+    display: flex !important;
+    width: auto !important;
+    min-width: 100% !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    padding: 10px 12px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    gap: 12px !important;
+  }
+  .sidebar nav .nav-item i,
+  .sidebar-bottom .nav-item i {
+    font-size: 16px !important;
+    margin: 0 !important;
+    width: 17px !important;
+    text-align: center !important;
+    flex-shrink: 0 !important;
+  }
+  .nav-item::after {
+    display: block !important;
+  }
+  .nav-item span {
+    display: inline !important;
+  }
+  /* Restore the main content layout */
+  .main {
+    padding-bottom: 0 !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  .topbar {
+    height: 64px !important;
+    min-height: 64px !important;
+    position: sticky !important;
+    top: 0 !important;
+  }
+  #pageContainer {
+    padding: 16px !important;
+  }
+  /* Improve camera stage vertical bounds for landscape phones */
+  .camera-stage {
+    height: auto !important;
+    flex: 1 1 auto !important;
+    min-height: 220px !important;
+    max-height: 55vh !important;
+  }
+}
